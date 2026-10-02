@@ -92,7 +92,7 @@ A escalabilidade é desenhada para N linguagens, mas implementada inicialmente a
 
 ## 3.6 Riscos e restrições conhecidas
 
-- O isolate exige que o container do runner rode **privilegiado / com acesso a cgroups v2** (a ser registrado na seção 6).
+- O isolate exige que o container do runner rode **privilegiado / com acesso a cgroups v2** (ver [ADR-005](adr/005-runner-container-privilegiado.md)).
 - **A compilação também roda no sandbox**: o g++ pode ser abusado (ex.: `#include "/dev/random"`, binários enormes).
 - **Kafka é at-least-once**: o processamento deve ser idempotente pelo `solucaoId`.
 - **Dual write DB + Kafka**: usar Transactional Outbox ou republicar soluções `PENDENTE` antigas.
@@ -104,7 +104,7 @@ A escalabilidade é desenhada para N linguagens, mas implementada inicialmente a
 
 - Estados e vereditos da solução → seções 4.1 e 5.3.
 - Modelo de domínio → seção 5.
-- ADRs (Kafka, isolate, SSE, Outbox, container privilegiado) → seção 6.
+- Decisões técnicas registradas como ADRs → seção 6 e [docs/adr](adr/README.md).
 - Linguagem de implementação do worker do runner (ex.: Java/Spring Kafka ou um processo leve) → definir no spike.
 
 # 4. Fluxos críticos de negócio
@@ -144,7 +144,7 @@ stateDiagram-v2
 ## 4.3 Gestão de membros
 
 1. O **Usuário** cria o grupo: ele vira **Avaliador** e o `codigoConvite` é gerado (uma única vez).
-2. Qualquer membro compartilha o link `/grupos/convite/{codigoConvite}`.
+2. Qualquer membro compartilha o link de convite, que aciona `POST /api/groups/join/{codigoConvite}`.
 3. Um usuário autenticado acessa o link e entra como **Estudante**. Se já for membro, nada muda; se o grupo estiver `FINALIZADO`, a entrada é recusada.
 4. Um **Avaliador** pode promover um membro a **Avaliador**.
 
@@ -164,7 +164,7 @@ stateDiagram-v2
 | **GrupoAtividadeItem**   | Associação N:N entre grupo e atividade                     | grupo, atividade, ordem                                                                                                |
 | **MembroGrupo**          | Participação de um usuário em um grupo                     | grupo, usuario, papel (`AVALIADOR` / `ESTUDANTE`), entrouEm                                                            |
 
-> **Convite não é uma entidade:** é um link único por grupo (`codigoConvite`), gerado uma única vez na criação do grupo. Acessar o link resulta na criação de um `MembroGrupo` com papel `ESTUDANTE`.
+> **Convite:** é um link único por grupo (`codigoConvite`), gerado uma única vez na criação do grupo. Acessar o link resulta na criação de um `MembroGrupo` com papel `ESTUDANTE`.
 
 ## 5.2 Diagrama ER
 
@@ -246,13 +246,15 @@ erDiagram
         string codigoConvite UK
     }
     GRUPO_ATIVIDADE_ITEM {
-        uuid grupoId PK, FK
-        uuid atividadeId PK, FK
+        uuid id PK
+        uuid grupoId FK "UK (grupoId, atividadeId)"
+        uuid atividadeId FK
         int ordem
     }
     MEMBRO_GRUPO {
-        uuid grupoId PK, FK
-        uuid usuarioId PK, FK
+        uuid id PK
+        uuid grupoId FK "UK (grupoId, usuarioId)"
+        uuid usuarioId FK
         enum papel "AVALIADOR | ESTUDANTE"
         timestamp entrouEm
     }
@@ -282,4 +284,9 @@ erDiagram
 - Senhas armazenadas apenas como hash (BCrypt).
 - As autorizações por papel no grupo são verificadas no `service`, não só no frontend.
 - O `codigoConvite` deve ser um token aleatório e não previsível (ex.: 128 bits, URL-safe). Como ele não é regenerado, um link vazado não pode ser revogado: **risco aceito por enquanto**.
-- Pendências de ADR (Kafka, isolate, SSE, Outbox, container privilegiado) estão listadas em 3.7.
+- Decisões de arquitetura registradas como ADRs em [docs/adr](adr/README.md):
+    - [ADR-001](adr/001-kafka-mensageria.md): Kafka como mensageria entre API e runners (Aceita)
+    - [ADR-002](adr/002-isolate-sandbox.md): isolate como sandbox de cada execução (Aceita)
+    - [ADR-003](adr/003-sse-notificacao-resultado.md): SSE para notificar o resultado ao cliente (Proposta)
+    - [ADR-004](adr/004-transactional-outbox.md): Transactional Outbox para publicar soluções no Kafka (Proposta)
+    - [ADR-005](adr/005-runner-container-privilegiado.md): runner em container privilegiado com cgroups v2 (Aceita)
