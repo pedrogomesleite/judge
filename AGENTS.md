@@ -10,7 +10,7 @@
 - **Backend:** Java 21, Spring Boot 3.x
 - **Build Tool Backend:** Maven
 - **Banco de Dados:** PostgreSQL
-- **Frontend (planejado em `frontend/`):** Vue 3 (Composition API com `<script setup>`, TypeScript, Vite, Pinia)
+- **Frontend (em `juizin/`):** Vue 3 (Composition API com `<script setup>`, TypeScript, Vite, Pinia)
 
 ---
 ## 2. Padrões de Arquitetura e Código
@@ -29,7 +29,7 @@
     - Use `Optional<T>` como retorno de buscas e trate adequadamente no service.
     - Use Lombok onde aplicável (`@RequiredArgsConstructor`, `@Getter`).
 
-### Frontend (Vue 3 - quando implementado na subpasta `frontend/`)
+### Frontend (Vue 3 - subpasta `juizin/`)
 - Utilizar exclusivamente **Vue 3** com **Composition API** e `<script setup lang="ts">`.
 - Gerenciamento de estado global via **Pinia**.
 - Centralizar requisições à API em camada/clientes HTTP específicos (apontando para `/api`).

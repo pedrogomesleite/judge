@@ -39,6 +39,8 @@ public class SecurityConfig {
                 .sessionManagement(sessao -> sessao.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/users").permitAll()
+                        // Catálogo público (visitante sem login); os casos de teste continuam autenticados
+                        .requestMatchers(HttpMethod.GET, "/api/activities", "/api/activities/{id}", "/api/languages").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
