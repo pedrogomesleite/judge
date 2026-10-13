@@ -14,12 +14,14 @@ import com.packges.judge.enums.Veredito;
 import com.packges.judge.exception.AcessoNegadoException;
 import com.packges.judge.exception.RecursoNaoEncontradoException;
 import com.packges.judge.exception.RegraNegocioException;
+import com.packges.judge.messaging.SolucaoEnviadaEvent;
 import com.packges.judge.repository.CasoDeTesteRepository;
 import com.packges.judge.repository.LinguagemRepository;
 import com.packges.judge.repository.ResultadoCasoDeTesteRepository;
 import com.packges.judge.repository.SolucaoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +40,7 @@ public class SolucaoService {
     private final UsuarioService usuarioService;
     private final AtividadeService atividadeService;
     private final GrupoService grupoService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public SolucaoResponse enviar(SolucaoRequest request, UUID usuarioId) {
@@ -66,7 +69,11 @@ public class SolucaoService {
         solucaoRepository.save(solucao);
         log.info("Solução {} recebida (atividade {}, linguagem {})", solucao.getId(), request.atividadeId(), linguagem.getNome());
 
-        // TODO(kafka): registrar na outbox e publicar em linguagem.getTopico() com key = solucaoId (ADR-001, ADR-004)
+        // TODO(rabbitmq): um @TransactionalEventListener(AFTER_COMMIT) publica este evento em linguagem.getFila()
+        //  e grava publicadaEm; + job de reconciliação das não publicadas (ADR-006, ADR-007).
+        //  Enquanto isso, o RunnerSimulado responde.
+        eventPublisher.publishEvent(new SolucaoEnviadaEvent(
+                solucao.getId(), request.atividadeId(), linguagem.getFila(), solucao.getCodigo()));
 
         return SolucaoResponse.from(solucao);
     }
@@ -105,9 +112,20 @@ public class SolucaoService {
     }
 
     /**
-     * Registra o resultado produzido pelo runner. É idempotente, porque o Kafka entrega at-least-once.
+     * Marca a solução como EM_EXECUCAO. Só altera soluções PENDENTE, então é idempotente.
      */
-    // TODO(kafka): chamado pelo consumer do tópico submissions.results
+    // TODO(rabbitmq): chamado quando o runner sinalizar o início da execução (hoje: RunnerSimulado)
+    @Transactional
+    public void marcarEmExecucao(UUID solucaoId) {
+        solucaoRepository.findById(solucaoId)
+                .filter(solucao -> solucao.getStatus() == StatusSolucao.PENDENTE)
+                .ifPresent(solucao -> solucao.setStatus(StatusSolucao.EM_EXECUCAO));
+    }
+
+    /**
+     * Registra o resultado produzido pelo runner. É idempotente, porque o RabbitMQ entrega at-least-once.
+     */
+    // TODO(rabbitmq): chamado pelo @RabbitListener da fila submissions.results (hoje: RunnerSimulado)
     @Transactional
     public void registrarResultado(ResultadoExecucao resultado) {
         Solucao solucao = solucaoRepository.findById(resultado.solucaoId())

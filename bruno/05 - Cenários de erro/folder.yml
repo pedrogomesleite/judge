@@ -1,0 +1,7 @@
+info:
+  name: 05 - Cenários de erro
+  type: folder
+  seq: 5
+
+request:
+  auth: inherit

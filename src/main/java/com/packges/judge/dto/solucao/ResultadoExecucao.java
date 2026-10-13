@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Resultado de execução produzido pelo runner. É o contrato da mensagem do tópico submissions.results.
+ * Resultado de execução produzido pelo runner. É o contrato da mensagem da fila submissions.results.
  */
 public record ResultadoExecucao(
         @NotNull UUID solucaoId,

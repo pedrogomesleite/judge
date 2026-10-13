@@ -1,0 +1,31 @@
+info:
+  name: Cadastrar usuário B
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/users"
+  body:
+    type: json
+    data: |-
+      {
+        "nome": "Beto Estudante",
+        "login": "beto",
+        "senha": "senha1234"
+      }
+  auth: inherit
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: in
+      value: 201, 409
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: 201 na primeira execução; 409 nas seguintes (login já existe).

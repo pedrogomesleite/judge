@@ -1,0 +1,30 @@
+info:
+  name: Adicionar atividade repetida (A) -> 409
+  type: http
+  seq: 8
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/groups/{{groupId}}/activities"
+  body:
+    type: json
+    data: |-
+      {
+        "atividadeId": "{{activityId}}",
+        "ordem": 2
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "409"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

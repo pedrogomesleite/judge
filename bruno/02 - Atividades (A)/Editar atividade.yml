@@ -1,0 +1,32 @@
+info:
+  name: Editar atividade
+  type: http
+  seq: 4
+
+http:
+  method: PUT
+  url: "{{baseUrl}}/api/activities/{{activityId}}"
+  body:
+    type: json
+    data: |-
+      {
+        "titulo": "Soma de dois números (A + B)",
+        "enunciado": "Leia dois inteiros A e B separados por espaço e imprima A + B.",
+        "limiteTempoMs": 1000,
+        "limiteMemoriaMb": 256
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

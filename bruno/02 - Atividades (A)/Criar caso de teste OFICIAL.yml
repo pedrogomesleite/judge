@@ -1,0 +1,31 @@
+info:
+  name: Criar caso de teste OFICIAL
+  type: http
+  seq: 5
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/activities/{{activityId}}/test-cases"
+  body:
+    type: json
+    data: |-
+      {
+        "entrada": "2 3\n",
+        "saidaEsperada": "5\n",
+        "tipo": "OFICIAL"
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "201"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

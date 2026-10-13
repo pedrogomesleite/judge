@@ -24,9 +24,9 @@ public class Linguagem {
     @Column(nullable = false)
     private String versao;
 
-    /** Tópico Kafka para onde as soluções desta linguagem são publicadas (ex.: submissions.cpp). */
+    /** Fila RabbitMQ para onde as soluções desta linguagem são publicadas (ex.: submissions.cpp). */
     @Column(nullable = false)
-    private String topico;
+    private String fila;
 
     @Column(nullable = false)
     private boolean ativa;

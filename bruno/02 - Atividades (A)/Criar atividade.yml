@@ -1,0 +1,41 @@
+info:
+  name: Criar atividade
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/activities"
+  body:
+    type: json
+    data: |-
+      {
+        "titulo": "Soma de dois números",
+        "enunciado": "Leia dois inteiros A e B e imprima A + B.",
+        "limiteTempoMs": 1000,
+        "limiteMemoriaMb": 256
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "201"
+  actions:
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.id
+        method: jsonq
+      variable:
+        name: activityId
+        scope: runtime
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

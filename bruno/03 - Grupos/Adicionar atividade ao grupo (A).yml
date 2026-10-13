@@ -1,0 +1,30 @@
+info:
+  name: Adicionar atividade ao grupo (A)
+  type: http
+  seq: 5
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/groups/{{groupId}}/activities"
+  body:
+    type: json
+    data: |-
+      {
+        "atividadeId": "{{activityId}}",
+        "ordem": 1
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "201"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

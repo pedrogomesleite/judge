@@ -1,7 +1,7 @@
 # ADR-004: Usar Transactional Outbox para publicar soluções no Kafka
 
 ## Status
-Proposta (2026-10-02)
+Substituída por [ADR-007](007-publicacao-apos-commit-reconciliacao.md) (2026-10-13). Proposta em 2026-10-02.
 
 ## Contexto
 Ao receber uma solução, a API precisa fazer **duas escritas em sistemas diferentes**:

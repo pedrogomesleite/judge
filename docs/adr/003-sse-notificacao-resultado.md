@@ -18,7 +18,7 @@ Usar **Server-Sent Events (SSE)**:
 - ✅ Simples: HTTP comum, suportado nativamente pelo navegador (`EventSource`) e pelo Spring (`SseEmitter` / `Flux<ServerSentEvent>`).
 - ✅ Reconexão automática do `EventSource`.
 - ✅ Menos requisições que polling.
-- ⚠️ Com **várias réplicas da API**, o resultado pode ser consumido por uma réplica diferente daquela que mantém a conexão SSE do cliente. Será preciso distribuir o evento entre réplicas (ex.: cada réplica consome `submissions.results` com um group próprio, ou Redis pub/sub).
+- ⚠️ Com **várias réplicas da API**, o resultado pode ser consumido por uma réplica diferente daquela que mantém a conexão SSE do cliente. Será preciso distribuir o evento entre réplicas (ex.: um exchange fanout de notificações no RabbitMQ, com uma fila exclusiva por réplica, ou Redis pub/sub).
 - ⚠️ Conexões abertas consomem recursos: definir timeout e fechar o stream após o veredito.
 - ⚠️ Proxies e load balancers precisam permitir conexões longas e sem buffering.
 

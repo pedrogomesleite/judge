@@ -56,4 +56,7 @@ public class Solucao {
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant enviadoEm;
+
+    /** Momento em que o broker confirmou a publicação. Nulo = ainda não publicada (ADR-007). */
+    private Instant publicadaEm;
 }

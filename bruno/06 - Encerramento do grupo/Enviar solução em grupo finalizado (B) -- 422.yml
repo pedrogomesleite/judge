@@ -1,0 +1,32 @@
+info:
+  name: Enviar solução em grupo finalizado (B) -> 422
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/submissions"
+  body:
+    type: json
+    data: |-
+      {
+        "atividadeId": "{{activityId}}",
+        "linguagemId": "{{languageId}}",
+        "grupoId": "{{groupId}}",
+        "codigo": "#include <iostream>\nint main() {\n    int a, b;\n    std::cin >> a >> b;\n    std::cout << a + b << std::endl;\n    return 0;\n}"
+      }
+  auth:
+    type: bearer
+    token: "{{tokenB}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "422"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -16,7 +16,7 @@ Existe um único tipo de conta: o **Usuário** (login e senha). **Estudante** e 
 
 ## 3.1 Visão geral
 
-A arquitetura do **Juizin** é **assíncrona e orientada a mensagens**. O **Usuário** envia uma solução para a API, que valida as regras de domínio (ver 5.4), persiste a **Solução** e a publica no tópico da linguagem correspondente. Um **Runner** daquela linguagem consome a mensagem, compila e executa o código em um sandbox (**isolate**), compara a saída obtida com a saída esperada de cada caso de teste oficial e publica o veredito em um tópico de resultados. A API consome esse resultado, atualiza a **Solução** e notifica o cliente.
+A arquitetura do **Juizin** é **assíncrona e orientada a mensagens**. O **Usuário** envia uma solução para a API, que valida as regras de domínio (ver 5.4), persiste a **Solução** e a publica na fila da linguagem correspondente (RabbitMQ). Um **Runner** daquela linguagem consome a mensagem, compila e executa o código em um sandbox (**isolate**), compara a saída obtida com a saída esperada de cada caso de teste oficial e publica o veredito em uma fila de resultados. A API consome esse resultado, atualiza a **Solução** e notifica o cliente.
 
 Neste primeiro momento **apenas o Runner C/C++ é implementado**. A arquitetura já prevê novas linguagens e mais réplicas (ver 3.5).
 
@@ -26,8 +26,8 @@ Neste primeiro momento **apenas o Runner C/C++ é implementado**. A arquitetura 
 flowchart LR
     U[Estudante / Avaliador<br/>Frontend Vue 3] -->|HTTPS /api| API[Juizin API<br/>Spring Boot]
     API --> DB[(PostgreSQL)]
-    API -->|submissions.cpp| K[[Kafka]]
-    K -->|consumer group runner-cpp| R[Runner C/C++<br/>N réplicas]
+    API -->|submissions.cpp| K[[RabbitMQ]]
+    K -->|competing consumers - prefetch| R[Runner C/C++<br/>N réplicas]
     R -->|executa cada caso em| I[isolate<br/>sandbox por execução]
     R -->|submissions.results| K
     K --> API
@@ -42,16 +42,17 @@ sequenceDiagram
     actor E as Usuário
     participant API as Juizin API (Spring)
     participant DB as PostgreSQL
-    participant K as Kafka
+    participant K as RabbitMQ
     participant R as Runner C/C++
     participant I as isolate
 
     E->>API: POST /api/submissions (código, linguagem, atividade, grupo opcional)
     API->>API: valida regras de domínio (membro, grupo EM_ANDAMENTO, atividade no grupo)
     API->>DB: salva Solucao (PENDENTE)
-    API->>K: publica em submissions.cpp (key = solucaoId)
     API-->>E: 202 Accepted {solucaoId}
-    K->>R: consome solução
+    API->>K: após o commit, publica em submissions.cpp
+    API->>DB: grava publicadaEm (ADR-007)
+    K->>R: entrega a solução (prefetch)
     R->>I: compila (g++) dentro do sandbox
     alt erro de compilação
         R->>K: resultado ERRO_COMPILACAO
@@ -63,49 +64,54 @@ sequenceDiagram
         end
         R->>K: publica em submissions.results (veredito)
     end
-    K->>API: consome resultado
+    R->>K: ack da mensagem de submissions.cpp
+    K->>API: entrega o resultado
     API->>DB: atualiza Solucao (status, veredito, tempo, memória)
     API-->>E: notifica (SSE) / GET /api/submissions/{id}
 ```
 
-> Os nomes técnicos de tópicos e endpoints (`submissions.*`, `/api/submissions`) são contratos técnicos e permanecem em inglês.
+> Os nomes técnicos de filas e endpoints (`submissions.*`, `/api/submissions`) são contratos técnicos e permanecem em inglês.
+
+> **Runner simulado (desenvolvimento):** enquanto a integração com o RabbitMQ é TODO, o `RunnerSimulado` consome o `SolucaoEnviadaEvent` dentro da própria API e devolve um veredito fictício: `ACEITA` por padrão, ou o veredito indicado pela diretiva `juizin-mock: <VEREDITO>` no código. Ele passa a solução por `EM_EXECUCAO` antes do resultado e é desligado com `juizin.runner.mock.enabled=false`.
 
 ## 3.4 Responsabilidades por componente e tecnologia
 
 | Componente    | Tecnologia                                                     | Responsável por                                                                                                                                                                                                                                                                                  | NÃO é responsável por                         |
 |:--------------|:---------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------|
 | Frontend      | Vue 3 + Pinia                                                  | Editor e envio da solução; exibir status e veredito; ouvir notificações via SSE                                                                                                                                                                                                                  | Validar o resultado                           |
-| Juizin API    | Spring Boot (Java 21)                                          | Autenticação; autorização por papel no grupo; validar a solução (linguagem suportada, tamanho do código, regras de grupo); persistir; publicar no tópico da linguagem; consumir resultados; atualizar o status; notificar o cliente                                                                | Executar código do usuário                    |
+| Juizin API    | Spring Boot (Java 21)                                          | Autenticação; autorização por papel no grupo; validar a solução (linguagem suportada, tamanho do código, regras de grupo); persistir; publicar na fila da linguagem; consumir resultados; atualizar o status; notificar o cliente                                                                | Executar código do usuário                    |
 | Banco         | PostgreSQL                                                     | Fonte da verdade: usuários, atividades, casos de teste, grupos e membros, soluções e vereditos                                                                                                                                                                                                   | Transportar jobs                              |
-| Mensageria    | Kafka                                                          | Desacoplar a API dos runners; servir de buffer em picos; rotear por linguagem (1 tópico por linguagem); distribuir a carga entre réplicas (consumer group); devolver resultados (`submissions.results`)                                                                                          | Executar ou isolar código; guardar estado final |
-| Runner C/C++  | Container Docker (imagem com g++ + isolate) + processo worker  | Consumir `submissions.cpp`; preparar o box; chamar o isolate para compilar e executar; ler o meta-arquivo; **comparar a saída** (normalizando espaços e quebras de linha finais); montar o veredito; publicar o resultado; limpar o box                                                              | Persistir no banco; falar com o cliente       |
+| Mensageria    | RabbitMQ                                                       | Desacoplar a API dos runners; servir de buffer em picos; rotear por linguagem (exchange direct, 1 fila por linguagem); distribuir a carga entre réplicas (competing consumers); retry e DLQ nativos; devolver resultados (`submissions.results`)                                                 | Executar ou isolar código; guardar estado final |
+| Runner C/C++  | Container Docker (imagem com g++ + isolate) + processo worker  | Consumir `submissions.cpp`; preparar o box; chamar o isolate para compilar e executar; ler o meta-arquivo; **comparar a saída** (normalizando espaços e quebras de linha finais); montar o veredito; publicar o resultado; confirmar (ack) a mensagem; limpar o box                                  | Persistir no banco; falar com o cliente       |
 | Sandbox       | **isolate**                                                    | Isolar **cada** compilação/execução: namespaces Linux (sem rede, PIDs e filesystem próprios), cgroups (limites de CPU, memória e nº de processos), limites de tempo (CPU e wall), tamanho máximo de arquivo, diretório de trabalho (box) descartável; relatar tempo, memória, exit code e sinal no meta-arquivo | Decidir o veredito; comparar a saída          |
 
 ## 3.5 Escalabilidade
 
 A escalabilidade é desenhada para N linguagens, mas implementada inicialmente apenas para C/C++.
 
-- **Horizontal por linguagem:** mais réplicas do `runner-cpp` no mesmo consumer group. O paralelismo máximo é o número de partições de `submissions.cpp`, que deve ser definido com folga (ex.: 6–12).
-- **Vertical por réplica:** cada runner processa até N soluções em paralelo, usando `--box-id` distintos do isolate (um box por execução simultânea).
-- **Novas linguagens:** nova imagem + tópico `submissions.<lang>` + consumer group `runner-<lang>`. A API só precisa conhecer o mapeamento linguagem → tópico (entidade `Linguagem`, ver 5.1), sem alterar o código do fluxo.
-- **Resultados:** um único tópico `submissions.results`, consumido pela API.
+- **Horizontal por linguagem:** mais réplicas do `runner-cpp` consumindo a mesma fila `submissions.cpp` (competing consumers), **sem limite de partições**.
+- **Vertical por réplica:** cada runner processa até N soluções em paralelo, usando `--box-id` distintos do isolate (um box por execução simultânea). O `prefetch` do consumidor é igual a N.
+- **Novas linguagens:** nova imagem + fila `submissions.<lang>` ligada ao exchange `juizin.submissions`. A API só precisa conhecer o mapeamento linguagem → fila (entidade `Linguagem`, ver 5.1), sem alterar o código do fluxo.
+- **Resultados:** uma única fila `submissions.results`, consumida pela API.
+- **Caminho de escala:** um nó (MVP) → cluster de 3 nós com filas quorum e sharding das filas mais carregadas via consistent-hash exchange (regional) → brokers regionais com Federation/Shovel (nacional). O gargalo esperado é a CPU dos runners, não o broker. Detalhes e gatilhos para reavaliar o Kafka no [ADR-006](adr/006-rabbitmq-mensageria.md).
 
 ## 3.6 Riscos e restrições conhecidas
 
 - O isolate exige que o container do runner rode **privilegiado / com acesso a cgroups v2** (ver [ADR-005](adr/005-runner-container-privilegiado.md)).
 - **A compilação também roda no sandbox**: o g++ pode ser abusado (ex.: `#include "/dev/random"`, binários enormes).
-- **Kafka é at-least-once**: o processamento deve ser idempotente pelo `solucaoId`.
-- **Dual write DB + Kafka**: usar Transactional Outbox ou republicar soluções `PENDENTE` antigas.
-- Execuções longas podem estourar o `max.poll.interval.ms` do consumer.
+- **O RabbitMQ é at-least-once** (a mensagem é reentregue se não houver ack): o processamento deve ser idempotente pelo `solucaoId`.
+- **Dual write DB + RabbitMQ**: publicação após o commit + job de reconciliação ([ADR-007](adr/007-publicacao-apos-commit-reconciliacao.md)).
+- **Sem replay**: depois do ack, a mensagem deixa de existir. O PostgreSQL é a fonte da verdade.
+- Execuções longas não podem passar do `consumer_timeout` do RabbitMQ (padrão de 30 min).
 - Medir tempo de **CPU** (não wall) e fixar CPU por box para evitar o efeito de vizinho barulhento.
-- Limite de mensagem do Kafka (~1MB): a mensagem leva o código e os IDs dos casos de teste; o runner busca e cacheia os casos.
+- A mensagem leva o código e os IDs dos casos de teste; o runner busca e cacheia os casos.
 
 ## 3.7 Decisões em aberto
 
 - Estados e vereditos da solução → seções 4.1 e 5.3.
 - Modelo de domínio → seção 5.
 - Decisões técnicas registradas como ADRs → seção 6 e [docs/adr](adr/README.md).
-- Linguagem de implementação do worker do runner (ex.: Java/Spring Kafka ou um processo leve) → definir no spike.
+- Linguagem de implementação do worker do runner (ex.: Java/Spring AMQP ou um processo leve) → definir no spike.
 
 # 4. Fluxos críticos de negócio
 
@@ -123,6 +129,7 @@ Ciclo de vida da **Solução**:
 stateDiagram-v2
     [*] --> PENDENTE: enviada
     PENDENTE --> EM_EXECUCAO: runner consumiu
+    PENDENTE --> FALHA: tentativas esgotadas (DLQ)
     EM_EXECUCAO --> CONCLUIDA: veredito calculado
     EM_EXECUCAO --> FALHA: erro de infraestrutura
     CONCLUIDA --> [*]
@@ -157,8 +164,8 @@ stateDiagram-v2
 | **Usuario**              | Usuário da aplicação (login e senha)                       | id, nome, login, senhaHash, criadoEm                                                                                   |
 | **Atividade**            | Enunciado do exercício; criada por qualquer usuário        | id, autor, titulo, enunciado, limiteTempoMs, limiteMemoriaMb                                                           |
 | **CasoDeTeste**          | Entrada e saída esperada de uma atividade                  | id, atividade, autor, entrada, saidaEsperada, tipo (`OFICIAL` / `COMUNITARIO`), grupo (só para os comunitários)       |
-| **Linguagem**            | Linguagem suportada e o roteamento para o runner (ver 3.5) | id, nome, versao, topico (ex.: `submissions.cpp`), ativa                                                               |
-| **Solucao**              | Código enviado por um usuário para uma atividade           | id, autor, atividade, grupo (opcional), linguagem, codigo, status, veredito, tempoMs, memoriaKb, enviadoEm            |
+| **Linguagem**            | Linguagem suportada e o roteamento para o runner (ver 3.5) | id, nome, versao, fila (ex.: `submissions.cpp`), ativa                                                                 |
+| **Solucao**              | Código enviado por um usuário para uma atividade           | id, autor, atividade, grupo (opcional), linguagem, codigo, status, veredito, tempoMs, memoriaKb, enviadoEm, publicadaEm |
 | **ResultadoCasoDeTeste** | Resultado de cada caso de teste oficial executado          | id, solucao, casoDeTeste, veredito, tempoMs, memoriaKb                                                                 |
 | **GrupoAtividade**       | Compilado de atividades com ciclo de vida                  | id, criador, nome, descricao, status, dataInicio, dataFim, codigoConvite                                               |
 | **GrupoAtividadeItem**   | Associação N:N entre grupo e atividade                     | grupo, atividade, ordem                                                                                                |
@@ -211,7 +218,7 @@ erDiagram
         uuid id PK
         string nome
         string versao
-        string topico "ex.: submissions.cpp"
+        string fila "ex.: submissions.cpp"
         boolean ativa
     }
     SOLUCAO {
@@ -226,6 +233,7 @@ erDiagram
         int tempoMs
         int memoriaKb
         timestamp enviadoEm
+        timestamp publicadaEm "nulo = ainda não publicada"
     }
     RESULTADO_CASO_DE_TESTE {
         uuid id PK
@@ -285,8 +293,10 @@ erDiagram
 - As autorizações por papel no grupo são verificadas no `service`, não só no frontend.
 - O `codigoConvite` deve ser um token aleatório e não previsível (ex.: 128 bits, URL-safe). Como ele não é regenerado, um link vazado não pode ser revogado: **risco aceito por enquanto**.
 - Decisões de arquitetura registradas como ADRs em [docs/adr](adr/README.md):
-    - [ADR-001](adr/001-kafka-mensageria.md): Kafka como mensageria entre API e runners (Aceita)
+    - [ADR-001](adr/001-kafka-mensageria.md): Kafka como mensageria entre API e runners (Substituída pelo ADR-006)
     - [ADR-002](adr/002-isolate-sandbox.md): isolate como sandbox de cada execução (Aceita)
     - [ADR-003](adr/003-sse-notificacao-resultado.md): SSE para notificar o resultado ao cliente (Proposta)
-    - [ADR-004](adr/004-transactional-outbox.md): Transactional Outbox para publicar soluções no Kafka (Proposta)
+    - [ADR-004](adr/004-transactional-outbox.md): Transactional Outbox para publicar soluções no Kafka (Substituída pelo ADR-007)
     - [ADR-005](adr/005-runner-container-privilegiado.md): runner em container privilegiado com cgroups v2 (Aceita)
+    - [ADR-006](adr/006-rabbitmq-mensageria.md): RabbitMQ como mensageria entre API e runners (Aceita)
+    - [ADR-007](adr/007-publicacao-apos-commit-reconciliacao.md): publicação após o commit com job de reconciliação (Aceita)

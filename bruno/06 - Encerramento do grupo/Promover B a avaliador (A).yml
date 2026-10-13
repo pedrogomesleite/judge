@@ -1,0 +1,26 @@
+info:
+  name: Promover B a avaliador (A)
+  type: http
+  seq: 1
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/groups/{{groupId}}/members/{{userBId}}/promote"
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.papel
+      operator: eq
+      value: AVALIADOR
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -31,7 +31,7 @@ public class LinguagemSeeder implements ApplicationRunner {
         Linguagem cpp = new Linguagem();
         cpp.setNome(NOME_CPP);
         cpp.setVersao("g++ (C++17)");
-        cpp.setTopico("submissions.cpp");
+        cpp.setFila("submissions.cpp");
         cpp.setAtiva(true);
         linguagemRepository.save(cpp);
         log.info("Linguagem {} cadastrada", NOME_CPP);

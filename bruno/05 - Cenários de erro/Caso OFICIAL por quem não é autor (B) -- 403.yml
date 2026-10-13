@@ -1,0 +1,31 @@
+info:
+  name: Caso OFICIAL por quem não é autor (B) -> 403
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/activities/{{activityId}}/test-cases"
+  body:
+    type: json
+    data: |-
+      {
+        "entrada": "1 1\n",
+        "saidaEsperada": "2\n",
+        "tipo": "OFICIAL"
+      }
+  auth:
+    type: bearer
+    token: "{{tokenB}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "403"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

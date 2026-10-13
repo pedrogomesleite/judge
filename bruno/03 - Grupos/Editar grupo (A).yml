@@ -1,0 +1,30 @@
+info:
+  name: Editar grupo (A)
+  type: http
+  seq: 4
+
+http:
+  method: PUT
+  url: "{{baseUrl}}/api/groups/{{groupId}}"
+  body:
+    type: json
+    data: |-
+      {
+        "nome": "Turma de Algoritmos 2026",
+        "descricao": "Lista 1 - aquecimento (editado)"
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

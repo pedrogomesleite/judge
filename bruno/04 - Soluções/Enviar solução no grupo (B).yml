@@ -1,0 +1,44 @@
+info:
+  name: Enviar solução no grupo (B)
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/submissions"
+  body:
+    type: json
+    data: |-
+      {
+        "atividadeId": "{{activityId}}",
+        "linguagemId": "{{languageId}}",
+        "grupoId": "{{groupId}}",
+        "codigo": "#include <iostream>\nint main() {\n    int a, b;\n    std::cin >> a >> b;\n    std::cout << a + b << std::endl;\n    return 0;\n}"
+      }
+  auth:
+    type: bearer
+    token: "{{tokenB}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "202"
+    - expression: res.body.status
+      operator: eq
+      value: PENDENTE
+  actions:
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.id
+        method: jsonq
+      variable:
+        name: submissionId
+        scope: runtime
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

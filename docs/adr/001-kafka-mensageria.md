@@ -1,7 +1,7 @@
 # ADR-001: Usar Kafka como mensageria entre API e runners
 
 ## Status
-Aceita (2026-10-02)
+Substituída por [ADR-006](006-rabbitmq-mensageria.md) (2026-10-13). Aceita originalmente em 2026-10-02.
 
 ## Contexto
 Executar o código de uma solução leva de alguns segundos a dezenas de segundos (compilação + N casos de teste). A API não pode ficar bloqueada esperando essa execução. Além disso:
