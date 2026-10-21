@@ -21,7 +21,7 @@ async function entrar() {
     const grupo = await entrarPorConvite(props.inviteCode)
     toast.add({ severity: 'success', summary: 'Convite aceito', detail: `Você faz parte do grupo ${grupo.nome}.`, life: 5000 })
     // replace: voltar no navegador não reabre o convite
-    await router.replace({ name: 'grupos', query: { groupId: grupo.id } })
+    await router.replace({ name: 'grupo', params: { id: grupo.id } })
   } catch (e) {
     erro.value =
       e instanceof ApiError && e.status === 404

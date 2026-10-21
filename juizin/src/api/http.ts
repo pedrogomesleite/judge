@@ -71,6 +71,82 @@ export async function request<T>(metodo: Metodo, caminho: string, { body, auth =
   return (await resposta.json()) as T
 }
 
+/**
+ * Abre um stream SSE autenticado e chama aoEvento para cada evento recebido. Usa fetch em vez de EventSource,
+ * que não envia o header Authorization. Resolve quando o servidor encerra o stream; rejeita com ApiError se a
+ * conexão falhar ou a API recusar (ex.: 403). Cancelado pelo sinal, a promise resolve sem erro.
+ */
+export async function abrirStream(
+  caminho: string,
+  aoEvento: (nome: string, dados: string) => void,
+  sinal: AbortSignal,
+): Promise<void> {
+  // application/json junto: os erros da API (ErroResponse) chegam legíveis
+  const headers: Record<string, string> = { Accept: 'text/event-stream, application/json' }
+  const token = obterToken()
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  let resposta: Response
+  try {
+    resposta = await fetch(`${BASE_URL}${caminho}`, { headers, signal: sinal, cache: 'no-store' })
+  } catch {
+    if (sinal.aborted) {
+      return
+    }
+    throw new ApiError(0, 'Não foi possível conectar à API')
+  }
+
+  if (resposta.status === 401) {
+    aoNaoAutorizado()
+  }
+  if (!resposta.ok || !resposta.body) {
+    throw await lerErro(resposta)
+  }
+
+  const leitor = resposta.body.pipeThrough(new TextDecoderStream()).getReader()
+  let pendente = ''
+  try {
+    for (;;) {
+      const { value, done } = await leitor.read()
+      if (done) {
+        return
+      }
+      // Eventos SSE terminam com uma linha em branco
+      pendente += value.replace(/\r\n?/g, '\n')
+      let fim: number
+      while ((fim = pendente.indexOf('\n\n')) >= 0) {
+        const bloco = pendente.slice(0, fim)
+        pendente = pendente.slice(fim + 2)
+        const evento = lerEventoSse(bloco)
+        if (evento) {
+          aoEvento(evento.nome, evento.dados)
+        }
+      }
+    }
+  } catch {
+    if (sinal.aborted) {
+      return
+    }
+    throw new ApiError(0, 'Conexão com a API interrompida')
+  }
+}
+
+/** Campos event e data de um bloco SSE; comentários (": ...") são ignorados. */
+function lerEventoSse(bloco: string): { nome: string; dados: string } | null {
+  let nome = 'message'
+  const dados: string[] = []
+  for (const linha of bloco.split('\n')) {
+    if (linha.startsWith('event:')) {
+      nome = linha.slice(6).trim()
+    } else if (linha.startsWith('data:')) {
+      dados.push(linha.slice(5).replace(/^ /, ''))
+    }
+  }
+  return dados.length > 0 ? { nome, dados: dados.join('\n') } : null
+}
+
 export function mensagemDeErro(erro: unknown): string {
   return erro instanceof ApiError ? erro.message : 'Erro inesperado'
 }

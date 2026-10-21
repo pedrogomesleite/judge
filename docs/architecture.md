@@ -10,8 +10,8 @@ Existe um único tipo de conta: o **Usuário** (login e senha). **Estudante** e 
 |:------------------------------|:-------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Visitante** (sem login)     | Quem acessa o Juizin sem entrar                                                            | lista as atividades e vê o enunciado, os casos de teste públicos (exemplos) e as linguagens; para enviar uma solução, precisa entrar ou criar uma conta                                 |
 | **Usuário** (fora de grupo)   | Qualquer usuário autenticado                                                               | cria atividades e os casos de teste oficiais das próprias atividades (podendo marcar alguns como públicos), envia soluções avulsas para qualquer atividade, cria grupos de atividades, visualiza as próprias soluções |
-| **Estudante** (no grupo)      | Membro de um grupo, que entrou pelo link de convite                                        | envia soluções para as atividades do grupo, cria e vê casos de teste comunitários (visíveis só para membros do grupo), compartilha o link de convite, visualiza as próprias soluções |
-| **Avaliador** (no grupo)      | Criador do grupo ou membro promovido por outro **Avaliador**                               | tudo que o **Estudante** faz, mais: gerencia atividades e datas do grupo, inicia/finaliza o grupo, promove membros a **Avaliador**, visualiza e compara as soluções de todos os membros do grupo |
+| **Estudante** (no grupo)      | Membro de um grupo, que entrou pelo link de convite                                        | envia soluções para as atividades do grupo, cria e vê casos de teste comunitários (visíveis só para membros do grupo), compartilha o link de convite, visualiza as próprias soluções, acompanha o placar do grupo e, ao final, a própria pontuação por atividade |
+| **Avaliador** (no grupo)      | Criador do grupo ou membro promovido por outro **Avaliador**                               | tudo que o **Estudante** faz, mais: gerencia atividades, pesos e datas do grupo, remove estudantes antes do início, inicia/finaliza o grupo, promove membros a **Avaliador**, visualiza e compara as soluções de todos os membros do grupo, exporta o resultado final em CSV |
 
 # 3. Visão Arquitetural de Alto Nível
 
@@ -79,7 +79,7 @@ sequenceDiagram
 
 | Componente    | Tecnologia                                                     | Responsável por                                                                                                                                                                                                                                                                                  | NÃO é responsável por                         |
 |:--------------|:---------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------|
-| Frontend      | Vue 3 + Pinia + PrimeVue 4 (`juizin/`)                         | Catálogo público de atividades; editor e envio da solução; exibir status e veredito; ouvir notificações via SSE (enquanto o SSE é TODO, consulta o status por polling)                                                                                                                           | Validar o resultado                           |
+| Frontend      | Vue 3 + Pinia + PrimeVue 4 (`juizin/`)                         | Catálogo público de atividades; editor e envio da solução; exibir status e veredito; tela do grupo por papel e status, atualizada pelo SSE do grupo (`/api/groups/{id}/events`); o status de uma solução fora da tela do grupo ainda é consultado por polling | Validar o resultado                           |
 | Juizin API    | Spring Boot (Java 21)                                          | Autenticação; autorização por papel no grupo; validar a solução (linguagem suportada, tamanho do código, regras de grupo); persistir; publicar na fila da linguagem; consumir resultados; atualizar o status; notificar o cliente                                                                | Executar código do usuário                    |
 | Banco         | PostgreSQL                                                     | Fonte da verdade: usuários, atividades, casos de teste, grupos e membros, soluções e vereditos                                                                                                                                                                                                   | Transportar jobs                              |
 | Mensageria    | RabbitMQ                                                       | Desacoplar a API dos runners; servir de buffer em picos; rotear por linguagem (exchange direct, 1 fila por linguagem); distribuir a carga entre réplicas (competing consumers); retry e DLQ nativos; devolver resultados (`submissions.results`)                                                 | Executar ou isolar código; guardar estado final |
@@ -149,12 +149,31 @@ stateDiagram-v2
     FINALIZADO --> [*]
 ```
 
+O que cada estado permite:
+
+| Estado              | Avaliador                                                                                                   | Estudante                                                                   |
+|:--------------------|:------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------|
+| `AGUARDANDO_INICIO` | adiciona/remove atividades e define o peso de cada uma; compartilha o convite; remove estudantes            | vê as atividades e os participantes; compartilha o convite                  |
+| `EM_ANDAMENTO`      | acompanha os envios de todos (tentativa, veredito, download do código) e o placar                           | envia soluções, vê os próprios envios e o placar                            |
+| `FINALIZADO`        | consolida os envios por estudante e atividade (peso, tentativas, sucesso, pontos) e exporta CSV             | vê a própria pontuação por atividade                                        |
+
+Atividades, pesos e participantes ficam congelados a partir de `EM_ANDAMENTO`.
+
 ## 4.3 Gestão de membros
 
 1. O **Usuário** cria o grupo: ele vira **Avaliador** e o `codigoConvite` é gerado (uma única vez).
 2. Qualquer membro compartilha o link de convite, que aciona `POST /api/groups/join/{codigoConvite}`.
-3. Um usuário autenticado acessa o link e entra como **Estudante**. Se já for membro, nada muda; se o grupo estiver `FINALIZADO`, a entrada é recusada.
+3. Um usuário autenticado acessa o link e entra como **Estudante**. Se já for membro, nada muda; se o grupo já tiver iniciado (`EM_ANDAMENTO` ou `FINALIZADO`), a entrada é recusada.
 4. Um **Avaliador** pode promover um membro a **Avaliador**.
+5. Antes do início, um **Avaliador** pode remover **Estudantes** (`DELETE /api/groups/{id}/members/{userId}`). Como o convite não é revogável, quem tiver o link pode entrar de novo enquanto o grupo não iniciar.
+
+## 4.4 Pontuação e placar
+
+- **Tentativas**: todos os envios do estudante para a atividade, dentro do grupo.
+- **Sucesso**: a atividade conta como aceita se houver pelo menos um envio `ACEITA`. Aceites repetidos na mesma atividade não somam.
+- **Pontos**: uma atividade aceita vale o seu peso (1 a 100, padrão 1); senão, 0. A pontuação máxima é a soma dos pesos.
+- O placar (`GET /api/groups/{id}/progress`) mostra a todos os membros quantas atividades cada estudante teve aceitas. O relatório (`GET /api/groups/{id}/report`) traz tentativas, sucesso e pontos por atividade: todos os estudantes para o **Avaliador**, só a própria linha para o **Estudante**.
+- Entram só os estudantes atuais e as atividades que ainda fazem parte do grupo.
 
 # 5. Modelo de dados de domínio
 
@@ -169,7 +188,7 @@ stateDiagram-v2
 | **Solucao**              | Código enviado por um usuário para uma atividade           | id, autor, atividade, grupo (opcional), linguagem, codigo, status, veredito, tempoMs, memoriaKb, enviadoEm, publicadaEm |
 | **ResultadoCasoDeTeste** | Resultado de cada caso de teste oficial executado          | id, solucao, casoDeTeste, veredito, tempoMs, memoriaKb                                                                 |
 | **GrupoAtividade**       | Compilado de atividades com ciclo de vida                  | id, criador, nome, descricao, status, dataInicio, dataFim, codigoConvite                                               |
-| **GrupoAtividadeItem**   | Associação N:N entre grupo e atividade                     | grupo, atividade, ordem                                                                                                |
+| **GrupoAtividadeItem**   | Associação N:N entre grupo e atividade                     | grupo, atividade, ordem, peso (1 a 100, padrão 1: pontos de um envio aceito)                                           |
 | **MembroGrupo**          | Participação de um usuário em um grupo                     | grupo, usuario, papel (`AVALIADOR` / `ESTUDANTE`), entrouEm                                                            |
 
 > **Convite:** é um link único por grupo (`codigoConvite`), gerado uma única vez na criação do grupo. Acessar o link resulta na criação de um `MembroGrupo` com papel `ESTUDANTE`.
@@ -261,6 +280,7 @@ erDiagram
         uuid grupoId FK "UK (grupoId, atividadeId)"
         uuid atividadeId FK
         int ordem
+        int peso "1 a 100, padrão 1"
     }
     MEMBRO_GRUPO {
         uuid id PK
@@ -284,8 +304,11 @@ erDiagram
 - Qualquer usuário cria atividades e envia soluções para qualquer atividade, com ou sem grupo.
 - Uma atividade pode fazer parte de vários grupos (N:N).
 - Quem cria o grupo vira automaticamente `AVALIADOR`. Um grupo tem sempre pelo menos 1 `AVALIADOR`.
-- Só o `AVALIADOR` promove membros a `AVALIADOR`, edita o grupo, adiciona ou remove atividades e inicia ou finaliza o grupo manualmente.
-- Convite: qualquer membro pode compartilhar o link do grupo. Ao acessá-lo autenticado, o usuário entra como `ESTUDANTE`. Se já for membro, nada muda (operação idempotente). Não é possível entrar em grupo `FINALIZADO`.
+- Só o `AVALIADOR` promove membros a `AVALIADOR`, edita o grupo, adiciona ou remove atividades, define pesos, remove estudantes e inicia ou finaliza o grupo manualmente.
+- Atividades, pesos e participantes só mudam com o grupo em `AGUARDANDO_INICIO` (adicionar/remover atividade, alterar peso, entrar pelo convite e remover membro são recusados depois disso).
+- Só membros `ESTUDANTE` podem ser removidos; assim o grupo nunca fica sem `AVALIADOR`.
+- Convite: qualquer membro pode compartilhar o link do grupo. Ao acessá-lo autenticado, o usuário entra como `ESTUDANTE`. Se já for membro, nada muda (operação idempotente). Só é possível entrar antes do início do grupo.
+- Pontuação: cada atividade aceita vale o seu peso, uma única vez por estudante (ver 4.4).
 - Uma solução com `grupo` só é aceita se o autor for membro, a atividade fizer parte do grupo e o grupo estiver `EM_ANDAMENTO`.
 - Casos `OFICIAL` são criados pelo autor da atividade e **são os únicos usados no veredito**. Casos `COMUNITARIO` são criados por membros de um grupo e só ficam visíveis para os membros desse grupo.
 - Um caso `OFICIAL` pode ser marcado como **público**, na criação ou depois, só pelo autor da atividade: continua valendo no veredito e aparece como exemplo para qualquer pessoa, inclusive sem login. Casos `COMUNITARIO` nunca são públicos.
@@ -301,12 +324,8 @@ erDiagram
 - Decisões de arquitetura registradas como ADRs em [docs/adr](adr/README.md):
     - [ADR-001](adr/001-kafka-mensageria.md): Kafka como mensageria entre API e runners (Substituída pelo ADR-006)
     - [ADR-002](adr/002-isolate-sandbox.md): isolate como sandbox de cada execução (Aceita)
-    - [ADR-003](adr/003-sse-notificacao-resultado.md): SSE para notificar o resultado ao cliente (Proposta)
+    - [ADR-003](adr/003-sse-notificacao-resultado.md): SSE para notificar o resultado ao cliente (Aceita; implementado no SSE do grupo)
     - [ADR-004](adr/004-transactional-outbox.md): Transactional Outbox para publicar soluções no Kafka (Substituída pelo ADR-007)
     - [ADR-005](adr/005-runner-container-privilegiado.md): runner em container privilegiado com cgroups v2 (Aceita)
     - [ADR-006](adr/006-rabbitmq-mensageria.md): RabbitMQ como mensageria entre API e runners (Aceita)
     - [ADR-007](adr/007-publicacao-apos-commit-reconciliacao.md): publicação após o commit com job de reconciliação (Aceita)
-
-
-# TODO
-- Tela específica para grupo do lado do professor

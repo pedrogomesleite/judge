@@ -80,6 +80,15 @@ export interface LinguagemResponse {
   versao: string
 }
 
+export interface GrupoRequest {
+  nome: string
+  descricao: string | null
+  /** Opcional: o grupo inicia automaticamente nessa data. */
+  dataInicio: string | null
+  /** Opcional: o grupo finaliza automaticamente nessa data; precisa ser posterior a dataInicio (422). */
+  dataFim: string | null
+}
+
 export interface GrupoResponse {
   id: string
   nome: string
@@ -91,11 +100,49 @@ export interface GrupoResponse {
   meuPapel: PapelGrupo
 }
 
+export interface GrupoAtividadeRequest {
+  atividadeId: string
+  ordem: number
+  /** 1 a 100; nulo vale 1. */
+  peso: number | null
+}
+
 export interface GrupoAtividadeItemResponse {
   atividadeId: string
   titulo: string
   ordem: number
+  /** Pontos que um envio aceito vale nesta atividade (1 a 100). */
+  peso: number
 }
+
+/** Placar: atividades com pelo menos um envio aceito (aceites repetidos não somam) sobre o total do grupo. */
+export interface ProgressoMembroResponse {
+  usuarioId: string
+  nome: string
+  aceitas: number
+  totalAtividades: number
+}
+
+export interface DesempenhoAtividadeResponse {
+  atividadeId: string
+  peso: number
+  tentativas: number
+  aceita: boolean
+  /** O peso, se a atividade foi aceita; senão 0. */
+  pontos: number
+}
+
+/** Consolidação dos envios de um estudante, com uma linha por atividade na ordem do grupo. */
+export interface DesempenhoEstudanteResponse {
+  usuarioId: string
+  nome: string
+  aceitas: number
+  pontos: number
+  atividades: DesempenhoAtividadeResponse[]
+}
+
+/** Nome dos eventos do SSE do grupo: indica o que buscar de novo. */
+export type TipoAlteracaoGrupo = 'GRUPO' | 'ATIVIDADES' | 'MEMBROS' | 'SOLUCOES'
 
 export interface MembroResponse {
   usuarioId: string

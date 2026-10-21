@@ -1,0 +1,37 @@
+info:
+  name: Relatório do grupo (A, todos os estudantes)
+  type: http
+  seq: 13
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/groups/{{groupId}}/report"
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.length
+      operator: eq
+      value: "1"
+    - expression: res.body[0].pontos
+      operator: eq
+      value: "3"
+    - expression: res.body[0].atividades[0].peso
+      operator: eq
+      value: "3"
+    - expression: res.body[0].atividades[0].aceita
+      operator: eq
+      value: "true"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: Consolidação por estudante e atividade: peso, tentativas, sucesso e pontos. Um envio aceito vale o peso da atividade (3, definido em "Alterar peso da atividade").

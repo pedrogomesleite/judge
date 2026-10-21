@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.util.UUID;
 
@@ -29,4 +30,9 @@ public class GrupoAtividadeItem {
 
     @Column(nullable = false)
     private Integer ordem;
+
+    /** Pontos que um envio aceito vale nesta atividade (1 a 100). */
+    @ColumnDefault("1")
+    @Column(nullable = false)
+    private Integer peso = 1;
 }

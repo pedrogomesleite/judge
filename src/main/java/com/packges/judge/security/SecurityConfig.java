@@ -1,6 +1,7 @@
 package com.packges.judge.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import jakarta.servlet.DispatcherType;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -43,6 +44,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/activities", "/api/activities/{id}",
                                 "/api/activities/{id}/test-cases/public", "/api/languages").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // Dispatch ASYNC do SSE (SseEmitter): a requisição original já foi autorizada
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
         return http.build();

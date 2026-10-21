@@ -1,17 +1,16 @@
 info:
-  name: Adicionar atividade repetida (A) -> 409
+  name: Alterar peso da atividade (A)
   type: http
-  seq: 8
+  seq: 6
 
 http:
-  method: POST
-  url: "{{baseUrl}}/api/groups/{{groupId}}/activities"
+  method: PATCH
+  url: "{{baseUrl}}/api/groups/{{groupId}}/activities/{{activityId}}"
   body:
     type: json
     data: |-
       {
-        "atividadeId": "{{activityId}}",
-        "ordem": 2
+        "peso": 3
       }
   auth:
     type: bearer
@@ -21,7 +20,10 @@ runtime:
   assertions:
     - expression: res.status
       operator: eq
-      value: "409"
+      value: "200"
+    - expression: res.body.peso
+      operator: eq
+      value: "3"
 
 settings:
   encodeUrl: true

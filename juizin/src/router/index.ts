@@ -45,6 +45,14 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      // Conteúdo conforme o papel do usuário no grupo e o status do grupo
+      path: '/groups/:id',
+      name: 'grupo',
+      component: () => import('@/views/GrupoDetalheView.vue'),
+      props: true,
+      meta: { requiresAuth: true },
+    },
+    {
       // Link de convite compartilhado pelos membros: sem sessão, passa pelo login e volta aqui
       path: '/groups/join/:inviteCode',
       name: 'convite',

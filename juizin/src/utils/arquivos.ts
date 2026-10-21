@@ -19,8 +19,8 @@ export function carimboDeArquivo(iso: string): string {
 }
 
 /** Baixa um texto como arquivo, gerado no próprio navegador. */
-export function baixarTexto(nomeArquivo: string, conteudo: string) {
-  const url = URL.createObjectURL(new Blob([conteudo], { type: 'text/plain;charset=utf-8' }))
+export function baixarTexto(nomeArquivo: string, conteudo: string, tipo = 'text/plain;charset=utf-8') {
+  const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }))
   const link = document.createElement('a')
   link.href = url
   link.download = nomeArquivo

@@ -179,7 +179,10 @@ function restaurarRascunho() {
 
 <template>
   <section class="stack">
-    <RouterLink :to="{ name: 'atividades' }"><i class="pi pi-arrow-left" /> Atividades</RouterLink>
+    <RouterLink v-if="grupoId" :to="{ name: 'grupo', params: { id: grupoId } }">
+      <i class="pi pi-arrow-left" /> Voltar ao grupo
+    </RouterLink>
+    <RouterLink v-else :to="{ name: 'atividades' }"><i class="pi pi-arrow-left" /> Atividades</RouterLink>
 
     <span v-if="carregando" class="texto-suave"><i class="pi pi-spin pi-spinner" /> Carregando atividade…</span>
     <Message v-else-if="erroCarregamento" severity="error">{{ erroCarregamento }}</Message>

@@ -12,16 +12,19 @@ import com.packges.judge.entity.MembroGrupo;
 import com.packges.judge.entity.Usuario;
 import com.packges.judge.enums.PapelGrupo;
 import com.packges.judge.enums.StatusGrupo;
+import com.packges.judge.enums.TipoAlteracaoGrupo;
 import com.packges.judge.exception.AcessoNegadoException;
 import com.packges.judge.exception.ConflitoException;
 import com.packges.judge.exception.RecursoNaoEncontradoException;
 import com.packges.judge.exception.RegraNegocioException;
+import com.packges.judge.messaging.GrupoAlteradoEvent;
 import com.packges.judge.repository.AtividadeRepository;
 import com.packges.judge.repository.GrupoAtividadeItemRepository;
 import com.packges.judge.repository.GrupoAtividadeRepository;
 import com.packges.judge.repository.MembroGrupoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,12 +41,14 @@ public class GrupoService {
 
     private static final int TAMANHO_CODIGO_CONVITE_BYTES = 16;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int PESO_PADRAO = 1;
 
     private final GrupoAtividadeRepository grupoRepository;
     private final MembroGrupoRepository membroRepository;
     private final GrupoAtividadeItemRepository itemRepository;
     private final AtividadeRepository atividadeRepository;
     private final UsuarioService usuarioService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public GrupoResponse criar(GrupoRequest request, UUID usuarioId) {
@@ -90,6 +95,7 @@ public class GrupoService {
         grupo.setDescricao(request.descricao());
         grupo.setDataInicio(request.dataInicio());
         grupo.setDataFim(request.dataFim());
+        notificar(grupoId, TipoAlteracaoGrupo.GRUPO);
         return GrupoResponse.from(grupo, membro.getPapel());
     }
 
@@ -104,7 +110,7 @@ public class GrupoService {
     @Transactional
     public GrupoAtividadeItemResponse adicionarAtividade(UUID grupoId, GrupoAtividadeRequest request, UUID usuarioId) {
         GrupoAtividade grupo = exigirAvaliador(grupoId, usuarioId).getGrupo();
-        exigirNaoFinalizado(grupo);
+        exigirAguardandoInicio(grupo, "Atividades só podem ser alteradas antes do início do grupo");
 
         Atividade atividade = atividadeRepository.findById(request.atividadeId())
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Atividade", request.atividadeId()));
@@ -116,18 +122,33 @@ public class GrupoService {
         item.setGrupo(grupo);
         item.setAtividade(atividade);
         item.setOrdem(request.ordem());
+        item.setPeso(request.peso() != null ? request.peso() : PESO_PADRAO);
         itemRepository.save(item);
+        notificar(grupoId, TipoAlteracaoGrupo.ATIVIDADES);
+        return GrupoAtividadeItemResponse.from(item);
+    }
+
+    @Transactional
+    public GrupoAtividadeItemResponse alterarPeso(UUID grupoId, UUID atividadeId, int peso, UUID usuarioId) {
+        GrupoAtividade grupo = exigirAvaliador(grupoId, usuarioId).getGrupo();
+        exigirAguardandoInicio(grupo, "Pesos só podem ser alterados antes do início do grupo");
+
+        GrupoAtividadeItem item = itemRepository.findByGrupoIdAndAtividadeId(grupoId, atividadeId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Atividade no grupo", atividadeId));
+        item.setPeso(peso);
+        notificar(grupoId, TipoAlteracaoGrupo.ATIVIDADES);
         return GrupoAtividadeItemResponse.from(item);
     }
 
     @Transactional
     public void removerAtividade(UUID grupoId, UUID atividadeId, UUID usuarioId) {
         GrupoAtividade grupo = exigirAvaliador(grupoId, usuarioId).getGrupo();
-        exigirNaoFinalizado(grupo);
+        exigirAguardandoInicio(grupo, "Atividades só podem ser alteradas antes do início do grupo");
 
         if (itemRepository.deleteByGrupoIdAndAtividadeId(grupoId, atividadeId) == 0) {
             throw new RecursoNaoEncontradoException("Atividade no grupo", atividadeId);
         }
+        notificar(grupoId, TipoAlteracaoGrupo.ATIVIDADES);
     }
 
     @Transactional
@@ -159,11 +180,33 @@ public class GrupoService {
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Membro do grupo", membroUsuarioId));
 
         alvo.setPapel(PapelGrupo.AVALIADOR);
+        notificar(grupoId, TipoAlteracaoGrupo.MEMBROS);
         return MembroResponse.from(alvo);
     }
 
     /**
+     * Remove um estudante do grupo antes do início. Avaliadores não são removidos, então o grupo nunca fica sem
+     * avaliador. Como o convite não é revogável, quem tiver o link pode entrar de novo enquanto o grupo não iniciar.
+     */
+    @Transactional
+    public void removerMembro(UUID grupoId, UUID membroUsuarioId, UUID usuarioId) {
+        GrupoAtividade grupo = exigirAvaliador(grupoId, usuarioId).getGrupo();
+        exigirAguardandoInicio(grupo, "Membros só podem ser removidos antes do início do grupo");
+
+        MembroGrupo alvo = membroRepository.findByGrupoIdAndUsuarioId(grupoId, membroUsuarioId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Membro do grupo", membroUsuarioId));
+        if (alvo.getPapel() != PapelGrupo.ESTUDANTE) {
+            throw new RegraNegocioException("Apenas estudantes podem ser removidos do grupo");
+        }
+
+        membroRepository.delete(alvo);
+        log.info("Usuário {} removido do grupo {} pelo usuário {}", membroUsuarioId, grupoId, usuarioId);
+        notificar(grupoId, TipoAlteracaoGrupo.MEMBROS);
+    }
+
+    /**
      * Entrada pelo link de convite. É idempotente: quem já é membro apenas recebe o grupo.
+     * Novos membros só entram antes do início do grupo.
      */
     @Transactional
     public GrupoResponse entrarPorConvite(String codigoConvite, UUID usuarioId) {
@@ -174,12 +217,11 @@ public class GrupoService {
         if (membroExistente.isPresent()) {
             return GrupoResponse.from(grupo, membroExistente.get().getPapel());
         }
-        if (grupo.getStatus() == StatusGrupo.FINALIZADO) {
-            throw new RegraNegocioException("Não é possível entrar em um grupo finalizado");
-        }
+        exigirAguardandoInicio(grupo, "Só é possível entrar no grupo antes do início");
 
         adicionarMembro(grupo, usuarioService.obterEntidade(usuarioId), PapelGrupo.ESTUDANTE);
         log.info("Usuário {} entrou no grupo {} por convite", usuarioId, grupo.getId());
+        notificar(grupo.getId(), TipoAlteracaoGrupo.MEMBROS);
         return GrupoResponse.from(grupo, PapelGrupo.ESTUDANTE);
     }
 
@@ -191,10 +233,12 @@ public class GrupoService {
         for (GrupoAtividade grupo : grupoRepository.findByStatusAndDataInicioLessThanEqual(StatusGrupo.AGUARDANDO_INICIO, agora)) {
             grupo.setStatus(StatusGrupo.EM_ANDAMENTO);
             log.info("Grupo {} iniciado automaticamente", grupo.getId());
+            notificar(grupo.getId(), TipoAlteracaoGrupo.GRUPO);
         }
         for (GrupoAtividade grupo : grupoRepository.findByStatusAndDataFimLessThanEqual(StatusGrupo.EM_ANDAMENTO, agora)) {
             grupo.setStatus(StatusGrupo.FINALIZADO);
             log.info("Grupo {} finalizado automaticamente", grupo.getId());
+            notificar(grupo.getId(), TipoAlteracaoGrupo.GRUPO);
         }
     }
 
@@ -244,11 +288,23 @@ public class GrupoService {
         }
         grupo.setStatus(novo);
         log.info("Grupo {} alterado manualmente para {}", grupo.getId(), novo);
+        notificar(grupo.getId(), TipoAlteracaoGrupo.GRUPO);
+    }
+
+    /** Avisa os membros conectados ao SSE do grupo, depois do commit (ver EventosGrupoService). */
+    private void notificar(UUID grupoId, TipoAlteracaoGrupo tipo) {
+        eventPublisher.publishEvent(new GrupoAlteradoEvent(grupoId, tipo));
     }
 
     private void exigirNaoFinalizado(GrupoAtividade grupo) {
         if (grupo.getStatus() == StatusGrupo.FINALIZADO) {
             throw new RegraNegocioException("Grupo finalizado não pode ser alterado");
+        }
+    }
+
+    private void exigirAguardandoInicio(GrupoAtividade grupo, String mensagem) {
+        if (grupo.getStatus() != StatusGrupo.AGUARDANDO_INICIO) {
+            throw new RegraNegocioException(mensagem);
         }
     }
 

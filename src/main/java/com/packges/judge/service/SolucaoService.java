@@ -11,10 +11,12 @@ import com.packges.judge.entity.Solucao;
 import com.packges.judge.enums.PapelGrupo;
 import com.packges.judge.enums.StatusGrupo;
 import com.packges.judge.enums.StatusSolucao;
+import com.packges.judge.enums.TipoAlteracaoGrupo;
 import com.packges.judge.enums.Veredito;
 import com.packges.judge.exception.AcessoNegadoException;
 import com.packges.judge.exception.RecursoNaoEncontradoException;
 import com.packges.judge.exception.RegraNegocioException;
+import com.packges.judge.messaging.GrupoAlteradoEvent;
 import com.packges.judge.messaging.SolucaoEnviadaEvent;
 import com.packges.judge.repository.CasoDeTesteRepository;
 import com.packges.judge.repository.LinguagemRepository;
@@ -75,6 +77,7 @@ public class SolucaoService {
         //  Enquanto isso, o RunnerSimulado responde.
         eventPublisher.publishEvent(new SolucaoEnviadaEvent(
                 solucao.getId(), request.atividadeId(), linguagem.getFila(), solucao.getCodigo()));
+        notificarGrupo(solucao);
 
         return SolucaoResponse.from(solucao);
     }
@@ -114,7 +117,10 @@ public class SolucaoService {
     public void marcarEmExecucao(UUID solucaoId) {
         solucaoRepository.findById(solucaoId)
                 .filter(solucao -> solucao.getStatus() == StatusSolucao.PENDENTE)
-                .ifPresent(solucao -> solucao.setStatus(StatusSolucao.EM_EXECUCAO));
+                .ifPresent(solucao -> {
+                    solucao.setStatus(StatusSolucao.EM_EXECUCAO);
+                    notificarGrupo(solucao);
+                });
     }
 
     /**
@@ -152,7 +158,14 @@ public class SolucaoService {
         }
 
         log.info("Solução {} avaliada: {}", solucao.getId(), solucao.getVeredito());
-        // TODO(sse): notificar o cliente (ADR-003)
+        notificarGrupo(solucao);
+    }
+
+    /** Soluções de grupo atualizam, em tempo real, as listas de envios e o placar do grupo (SSE, ADR-003). */
+    private void notificarGrupo(Solucao solucao) {
+        if (solucao.getGrupo() != null) {
+            eventPublisher.publishEvent(new GrupoAlteradoEvent(solucao.getGrupo().getId(), TipoAlteracaoGrupo.SOLUCOES));
+        }
     }
 
     /**

@@ -1,0 +1,32 @@
+info:
+  name: Adicionar atividade com grupo em andamento (A) -> 422
+  type: http
+  seq: 8
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/groups/{{groupId}}/activities"
+  body:
+    type: json
+    data: |-
+      {
+        "atividadeId": "{{activityId}}",
+        "ordem": 2
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "422"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: Atividades só podem ser adicionadas antes do início do grupo.

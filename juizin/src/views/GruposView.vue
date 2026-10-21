@@ -1,25 +1,26 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import Tabs from 'primevue/tabs'
 import TabList from 'primevue/tablist'
 import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
+import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
 import GruposTabela from '@/components/GruposTabela.vue'
+import NovoGrupoDialog from '@/components/NovoGrupoDialog.vue'
 import { listarMeusGrupos } from '@/api/grupos'
 import { mensagemDeErro } from '@/api/http'
 import type { GrupoResponse, PapelGrupo } from '@/api/types'
 
-const route = useRoute()
+const router = useRouter()
 const toast = useToast()
-
-const grupoIdDestacado = computed(() => (typeof route.query.groupId === 'string' ? route.query.groupId : null))
 
 const grupos = ref<GrupoResponse[]>([])
 const carregando = ref(true)
 const aba = ref<PapelGrupo>('AVALIADOR')
+const criandoGrupo = ref(false)
 
 const comoAvaliador = computed(() => grupos.value.filter((g) => g.meuPapel === 'AVALIADOR'))
 const comoEstudante = computed(() => grupos.value.filter((g) => g.meuPapel === 'ESTUDANTE'))
@@ -27,11 +28,8 @@ const comoEstudante = computed(() => grupos.value.filter((g) => g.meuPapel === '
 onMounted(async () => {
   try {
     grupos.value = await listarMeusGrupos()
-    const destacado = grupos.value.find((g) => g.id === grupoIdDestacado.value)
-    // Abre na aba do grupo destacado ou, sem ele, direto na aba que tem grupos
-    if (destacado) {
-      aba.value = destacado.meuPapel
-    } else if (comoAvaliador.value.length === 0 && comoEstudante.value.length > 0) {
+    // Abre direto na aba que tem grupos
+    if (comoAvaliador.value.length === 0 && comoEstudante.value.length > 0) {
       aba.value = 'ESTUDANTE'
     }
   } catch (e) {
@@ -40,17 +38,29 @@ onMounted(async () => {
     carregando.value = false
   }
 })
+
+// Quem cria o grupo é o avaliador: vai direto para a tela do grupo, com o link de convite e as atividades
+function aoCriarGrupo(grupo: GrupoResponse) {
+  toast.add({ severity: 'success', summary: 'Grupo criado', detail: 'Você é o avaliador deste grupo.', life: 4000 })
+  router.push({ name: 'grupo', params: { id: grupo.id } })
+}
 </script>
 
 <template>
   <section class="stack">
-    <div>
-      <h1>Meus grupos</h1>
-      <span class="texto-suave">
-        Expanda um grupo para ver as atividades, enviar respostas nele e copiar o link de convite. Nos grupos que você
-        avalia, acompanhe também os envios de cada membro.
-      </span>
+    <div class="row">
+      <div>
+        <h1>Meus grupos</h1>
+        <span class="texto-suave">
+          Abra um grupo para ver as atividades, enviar respostas e acompanhar o placar. Nos grupos que você avalia,
+          monte as atividades, acompanhe os envios de cada membro e exporte o resultado final.
+        </span>
+      </div>
+      <span class="spacer" />
+      <Button label="Novo grupo" icon="pi pi-plus" @click="criandoGrupo = true" />
     </div>
+
+    <NovoGrupoDialog v-model:visible="criandoGrupo" @criado="aoCriarGrupo" />
 
     <Tabs v-model:value="aba">
       <TabList>
@@ -68,15 +78,13 @@ onMounted(async () => {
           <GruposTabela
             :grupos="comoAvaliador"
             :carregando="carregando"
-            :expandir-grupo-id="grupoIdDestacado"
-            vazio="Você ainda não avalia nenhum grupo."
+            vazio="Você ainda não avalia nenhum grupo. Use Novo grupo para criar um."
           />
         </TabPanel>
         <TabPanel value="ESTUDANTE">
           <GruposTabela
             :grupos="comoEstudante"
             :carregando="carregando"
-            :expandir-grupo-id="grupoIdDestacado"
             vazio="Você ainda não participa de nenhum grupo como estudante."
           />
         </TabPanel>

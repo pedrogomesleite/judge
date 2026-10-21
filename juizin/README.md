@@ -25,7 +25,8 @@ npm run build      # type-check (vue-tsc) + build de produção em dist/
 | `/signup`          | público     | Criar conta (entra automaticamente)                                  |
 | `/activities`      | público     | Atividades avulsas (catálogo)                                        |
 | `/activities/:id`  | público     | Detalhe da atividade, casos de teste e envio da resposta (`?groupId=` envia no grupo) |
-| `/groups`          | autenticado | Meus grupos, separados entre avaliador e estudante (`?groupId=` abre o grupo expandido) |
+| `/groups`          | autenticado | Meus grupos, separados entre avaliador e estudante                   |
+| `/groups/:id`      | autenticado | Tela do grupo, conforme o papel e o status do grupo, atualizada em tempo real |
 | `/groups/join/:inviteCode` | autenticado | Aceita o link de convite e leva ao grupo                     |
 | `/submissions`     | autenticado | Minhas respostas, separadas entre sucessos e erros                   |
 
@@ -35,9 +36,23 @@ A mesma tela mostra os **exemplos** (casos oficiais que o autor marcou como púb
 
 O autor da atividade vê também o cartão **Casos oficiais**, onde cria casos e marca ou desmarca cada um como público.
 
-Nos grupos em que a pessoa é **avaliadora**, o grupo expandido mostra a **consolidação dos envios**: cada atividade com quantos envios recebeu e quantos estudantes enviaram ou tiveram resposta aceita e, dentro dela, os envios dos membros (membro, data e hora, linguagem e resultado). Dali o avaliador abre o código enviado ou baixa o arquivo com a extensão da linguagem (ex.: `.cpp`). A lista se atualiza sozinha enquanto houver envio sem veredito.
+Em **Meus grupos**, o botão **Novo grupo** cria um grupo com nome, descrição e, opcionalmente, datas de início e fim (com elas, o grupo inicia e finaliza sozinho). Quem cria entra como **avaliador** e é levado à tela do grupo.
 
-Em **Meus grupos**, todo membro (avaliador ou estudante) vê o **link de convite** ao expandir o grupo, com botão para copiar. O link não aparece em grupos finalizados, que não aceitam novas entradas. Quem abre o link sem sessão passa pelo login (ou cadastro) e volta para o convite; ao aceitar, entra como estudante e cai em `/groups` com o grupo expandido. Se já for membro, só é levado ao grupo.
+### Tela do grupo (`/groups/:id`)
+
+O conteúdo depende do papel no grupo e do status:
+
+| Status              | Avaliador                                                                                                                              | Estudante                                                                         |
+|:--------------------|:---------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------------|
+| Aguardando início   | adiciona/remove atividades do catálogo e define o peso de cada uma (1 a 100, padrão 1); link de convite; participantes, com opção de remover estudantes; botão **Iniciar agora** | atividades (com peso) e participantes, só leitura; link de convite               |
+| Em andamento        | envios por atividade (tentativa, retorno, ver/baixar código); placar de atividades aceitas por estudante; botão **Finalizar agora**     | atividades com os próprios envios e o link para enviar; placar dos participantes |
+| Finalizado          | resultado por estudante e por atividade (peso, tentativas, sucesso, pontos) e **Exportar CSV**                                          | pontuação por atividade e total                                                   |
+
+Regras: uma atividade aceita vale o seu peso, uma única vez por estudante (aceites repetidos não somam). Atividades, pesos e participantes só mudam antes do início; o link de convite só aparece nesse estado, porque depois a entrada é recusada. O CSV usa `;` e BOM UTF-8 para abrir direto no Excel em português.
+
+A tela ouve o SSE do grupo (`useEventosDoGrupo`): cada evento (`GRUPO`, `ATIVIDADES`, `MEMBROS`, `SOLUCOES`) faz a tela buscar de novo só o que mudou. O indicador **Ao vivo** mostra a conexão; se ela cair, a tela reconecta e recarrega tudo.
+
+Quem abre o link de convite sem sessão passa pelo login (ou cadastro) e volta para o convite; ao aceitar, entra como estudante e cai na tela do grupo. Se já for membro, só é levado ao grupo.
 
 ## Estrutura
 
@@ -45,7 +60,8 @@ Em **Meus grupos**, todo membro (avaliador ou estudante) vê o **link de convite
 - `src/stores/auth.ts`: sessão (JWT em `localStorage`) e usuário logado.
 - `src/router/index.ts`: rotas e guarda de autenticação (`meta.requiresAuth` / `meta.guestOnly`).
 - `src/views/`: telas. `src/components/`: componentes compartilhados.
-- `src/composables/usePolling.ts`: acompanha o status das soluções enquanto a notificação via SSE é TODO (ADR-003).
+- `src/composables/useEventosDoGrupo.ts`: SSE do grupo (ADR-003) via `fetch` em streaming (`abrirStream` em `http.ts`), porque o `EventSource` não envia o JWT.
+- `src/composables/usePolling.ts`: acompanha o status de uma solução fora da tela do grupo, enquanto não há SSE por solução.
 
 ## Por que PrimeVue 4
 

@@ -1,0 +1,31 @@
+info:
+  name: Alterar peso com grupo em andamento (A) -> 422
+  type: http
+  seq: 15
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/groups/{{groupId}}/activities/{{activityId}}"
+  body:
+    type: json
+    data: |-
+      {
+        "peso": 5
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "422"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+
+docs: Atividades, pesos e participantes só mudam com o grupo em AGUARDANDO_INICIO.
