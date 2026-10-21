@@ -10,7 +10,9 @@ public record CasoDeTesteResponse(
         UUID atividadeId,
         UUID autorId,
         UUID grupoId,
+        String grupoNome,
         TipoCasoDeTeste tipo,
+        boolean publico,
         String entrada,
         String saidaEsperada
 ) {
@@ -20,7 +22,9 @@ public record CasoDeTesteResponse(
                 caso.getAtividade().getId(),
                 caso.getAutor().getId(),
                 caso.getGrupo() != null ? caso.getGrupo().getId() : null,
+                caso.getGrupo() != null ? caso.getGrupo().getNome() : null,
                 caso.getTipo(),
+                caso.isPublico(),
                 caso.getEntrada(),
                 caso.getSaidaEsperada()
         );

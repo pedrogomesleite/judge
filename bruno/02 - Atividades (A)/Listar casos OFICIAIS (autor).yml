@@ -11,6 +11,9 @@ http:
     token: "{{tokenA}}"
 
 runtime:
+  variables:
+    - name: activityId
+      value: 1c989304-e5b3-461a-ae01-09498b963cdb
   assertions:
     - expression: res.status
       operator: eq

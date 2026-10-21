@@ -8,9 +8,9 @@ Existe um único tipo de conta: o **Usuário** (login e senha). **Estudante** e 
 
 | Persona                       | Descrição                                                                                  | Ações                                                                                                                                                                                    |
 |:------------------------------|:-------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Visitante** (sem login)     | Quem acessa o Juizin sem entrar                                                            | lista as atividades e vê o enunciado e as linguagens; para enviar uma solução, precisa entrar ou criar uma conta                                                                        |
-| **Usuário** (fora de grupo)   | Qualquer usuário autenticado                                                               | cria atividades e os casos de teste oficiais das próprias atividades, envia soluções avulsas para qualquer atividade, cria grupos de atividades, visualiza as próprias soluções         |
-| **Estudante** (no grupo)      | Membro de um grupo, que entrou pelo link de convite                                        | envia soluções para as atividades do grupo, cria casos de teste comunitários (visíveis só para membros do grupo), compartilha o link de convite, visualiza as próprias soluções |
+| **Visitante** (sem login)     | Quem acessa o Juizin sem entrar                                                            | lista as atividades e vê o enunciado, os casos de teste públicos (exemplos) e as linguagens; para enviar uma solução, precisa entrar ou criar uma conta                                 |
+| **Usuário** (fora de grupo)   | Qualquer usuário autenticado                                                               | cria atividades e os casos de teste oficiais das próprias atividades (podendo marcar alguns como públicos), envia soluções avulsas para qualquer atividade, cria grupos de atividades, visualiza as próprias soluções |
+| **Estudante** (no grupo)      | Membro de um grupo, que entrou pelo link de convite                                        | envia soluções para as atividades do grupo, cria e vê casos de teste comunitários (visíveis só para membros do grupo), compartilha o link de convite, visualiza as próprias soluções |
 | **Avaliador** (no grupo)      | Criador do grupo ou membro promovido por outro **Avaliador**                               | tudo que o **Estudante** faz, mais: gerencia atividades e datas do grupo, inicia/finaliza o grupo, promove membros a **Avaliador**, visualiza e compara as soluções de todos os membros do grupo |
 
 # 3. Visão Arquitetural de Alto Nível
@@ -122,7 +122,7 @@ Fluxo técnico detalhado no diagrama 3.3. Regras aplicadas pela API antes de per
 
 - Solução **avulsa** (sem grupo): qualquer usuário autenticado, para qualquer atividade.
 - Solução **no grupo**: o autor precisa ser membro, a atividade precisa fazer parte do grupo e o grupo precisa estar `EM_ANDAMENTO`.
-- Apenas os casos de teste `OFICIAL` participam do veredito.
+- Apenas os casos de teste `OFICIAL` (públicos ou não) participam do veredito.
 
 Ciclo de vida da **Solução**:
 
@@ -164,8 +164,8 @@ stateDiagram-v2
 |:-------------------------|:-----------------------------------------------------------|:----------------------------------------------------------------------------------------------------------------------|
 | **Usuario**              | Usuário da aplicação (login e senha)                       | id, nome, login, senhaHash, criadoEm                                                                                   |
 | **Atividade**            | Enunciado do exercício; criada por qualquer usuário        | id, autor, titulo, enunciado, limiteTempoMs, limiteMemoriaMb                                                           |
-| **CasoDeTeste**          | Entrada e saída esperada de uma atividade                  | id, atividade, autor, entrada, saidaEsperada, tipo (`OFICIAL` / `COMUNITARIO`), grupo (só para os comunitários)       |
-| **Linguagem**            | Linguagem suportada e o roteamento para o runner (ver 3.5) | id, nome, versao, fila (ex.: `submissions.cpp`), ativa                                                                 |
+| **CasoDeTeste**          | Entrada e saída esperada de uma atividade                  | id, atividade, autor, entrada, saidaEsperada, tipo (`OFICIAL` / `COMUNITARIO`), grupo (só para os comunitários), publico (só para os oficiais) |
+| **Linguagem**            | Linguagem suportada e o roteamento para o runner (ver 3.5) | id, nome, versao, fila (ex.: `submissions.cpp`), extensao (ex.: `cpp`), ativa                                          |
 | **Solucao**              | Código enviado por um usuário para uma atividade           | id, autor, atividade, grupo (opcional), linguagem, codigo, status, veredito, tempoMs, memoriaKb, enviadoEm, publicadaEm |
 | **ResultadoCasoDeTeste** | Resultado de cada caso de teste oficial executado          | id, solucao, casoDeTeste, veredito, tempoMs, memoriaKb                                                                 |
 | **GrupoAtividade**       | Compilado de atividades com ciclo de vida                  | id, criador, nome, descricao, status, dataInicio, dataFim, codigoConvite                                               |
@@ -214,12 +214,14 @@ erDiagram
         text entrada
         text saidaEsperada
         enum tipo "OFICIAL | COMUNITARIO"
+        boolean publico "só OFICIAL"
     }
     LINGUAGEM {
         uuid id PK
         string nome
         string versao
         string fila "ex.: submissions.cpp"
+        string extensao "ex.: cpp"
         boolean ativa
     }
     SOLUCAO {
@@ -286,12 +288,14 @@ erDiagram
 - Convite: qualquer membro pode compartilhar o link do grupo. Ao acessá-lo autenticado, o usuário entra como `ESTUDANTE`. Se já for membro, nada muda (operação idempotente). Não é possível entrar em grupo `FINALIZADO`.
 - Uma solução com `grupo` só é aceita se o autor for membro, a atividade fizer parte do grupo e o grupo estiver `EM_ANDAMENTO`.
 - Casos `OFICIAL` são criados pelo autor da atividade e **são os únicos usados no veredito**. Casos `COMUNITARIO` são criados por membros de um grupo e só ficam visíveis para os membros desse grupo.
-- Visibilidade de soluções: o autor vê as próprias; o `AVALIADOR` vê todas as soluções do seu grupo.
+- Um caso `OFICIAL` pode ser marcado como **público**, na criação ou depois, só pelo autor da atividade: continua valendo no veredito e aparece como exemplo para qualquer pessoa, inclusive sem login. Casos `COMUNITARIO` nunca são públicos.
+- Na tela da atividade, o membro vê os casos `COMUNITARIO` daquela atividade de todos os grupos de que participa, cada um identificado pelo grupo de origem.
+- Visibilidade de soluções: o autor vê as próprias; o `AVALIADOR` vê todas as soluções do seu grupo, inclusive o código (`GET /api/submissions/{id}/code`, que devolve também a extensão da linguagem para o download).
 
 # 6. Decisões técnicas e restrições de segurança
 
 - Senhas armazenadas apenas como hash (BCrypt).
-- Leitura pública: `GET /api/activities`, `GET /api/activities/{id}` e `GET /api/languages` não exigem login (catálogo para visitantes). Todo o resto exige JWT, inclusive os casos de teste.
+- Leitura pública: `GET /api/activities`, `GET /api/activities/{id}`, `GET /api/activities/{id}/test-cases/public` (só os casos oficiais marcados como públicos) e `GET /api/languages` não exigem login (catálogo para visitantes). Todo o resto exige JWT, inclusive os demais casos de teste.
 - As autorizações por papel no grupo são verificadas no `service`, não só no frontend.
 - O `codigoConvite` deve ser um token aleatório e não previsível (ex.: 128 bits, URL-safe). Como ele não é regenerado, um link vazado não pode ser revogado: **risco aceito por enquanto**.
 - Decisões de arquitetura registradas como ADRs em [docs/adr](adr/README.md):
@@ -302,3 +306,7 @@ erDiagram
     - [ADR-005](adr/005-runner-container-privilegiado.md): runner em container privilegiado com cgroups v2 (Aceita)
     - [ADR-006](adr/006-rabbitmq-mensageria.md): RabbitMQ como mensageria entre API e runners (Aceita)
     - [ADR-007](adr/007-publicacao-apos-commit-reconciliacao.md): publicação após o commit com job de reconciliação (Aceita)
+
+
+# TODO
+- Tela específica para grupo do lado do professor

@@ -65,7 +65,7 @@ public class AtividadeService {
     }
 
     /**
-     * OFICIAL: apenas o autor da atividade cria; são os casos usados no veredito.
+     * OFICIAL: apenas o autor da atividade cria; são os casos usados no veredito. Pode ser público (exemplo).
      * COMUNITARIO: criado por membros de um grupo que contém a atividade; visível só para o grupo.
      */
     @Transactional
@@ -81,7 +81,11 @@ public class AtividadeService {
 
         if (request.tipo() == TipoCasoDeTeste.OFICIAL) {
             exigirAutor(atividade, usuarioId);
+            caso.setPublico(Boolean.TRUE.equals(request.publico()));
         } else {
+            if (Boolean.TRUE.equals(request.publico())) {
+                throw new RegraNegocioException("Casos de teste comunitários são visíveis só para o grupo e não podem ser públicos");
+            }
             if (request.grupoId() == null) {
                 throw new RegraNegocioException("grupoId é obrigatório para casos de teste comunitários");
             }
@@ -113,6 +117,50 @@ public class AtividadeService {
             casos = casoDeTesteRepository.findByAtividadeIdAndGrupoId(atividadeId, grupoId);
         }
         return casos.stream().map(CasoDeTesteResponse::from).toList();
+    }
+
+    /**
+     * Marca ou desmarca um caso OFICIAL como público. Apenas o autor da atividade.
+     */
+    @Transactional
+    public CasoDeTesteResponse alterarPublico(UUID atividadeId, UUID casoId, boolean publico, UUID usuarioId) {
+        exigirAutor(obterEntidade(atividadeId), usuarioId);
+        CasoDeTeste caso = casoDeTesteRepository.findByIdAndAtividadeId(casoId, atividadeId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Caso de teste", casoId));
+        if (caso.getTipo() != TipoCasoDeTeste.OFICIAL) {
+            throw new RegraNegocioException("Casos de teste comunitários são visíveis só para o grupo e não podem ser públicos");
+        }
+
+        caso.setPublico(publico);
+        log.info("Caso de teste {} da atividade {} agora é {}", casoId, atividadeId, publico ? "público" : "privado");
+        return CasoDeTesteResponse.from(caso);
+    }
+
+    /**
+     * Casos oficiais marcados como públicos: exemplos visíveis para qualquer pessoa, inclusive sem login.
+     */
+    @Transactional(readOnly = true)
+    public List<CasoDeTesteResponse> listarCasosPublicos(UUID atividadeId) {
+        obterEntidade(atividadeId);
+        return casoDeTesteRepository.findByAtividadeIdAndTipoAndPublicoTrue(atividadeId, TipoCasoDeTeste.OFICIAL).stream()
+                .map(CasoDeTesteResponse::from)
+                .toList();
+    }
+
+    /**
+     * Casos comunitários da atividade compartilhados em todos os grupos de que o usuário é membro.
+     * Cada caso traz o grupo de origem (grupoId e grupoNome).
+     */
+    @Transactional(readOnly = true)
+    public List<CasoDeTesteResponse> listarCasosCompartilhados(UUID atividadeId, UUID usuarioId) {
+        obterEntidade(atividadeId);
+        List<UUID> grupoIds = grupoService.idsDosGrupos(usuarioId);
+        if (grupoIds.isEmpty()) {
+            return List.of();
+        }
+        return casoDeTesteRepository.findByAtividadeIdAndTipoAndGrupoIdIn(atividadeId, TipoCasoDeTeste.COMUNITARIO, grupoIds).stream()
+                .map(CasoDeTesteResponse::from)
+                .toList();
     }
 
     Atividade obterEntidade(UUID id) {

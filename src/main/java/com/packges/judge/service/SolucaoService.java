@@ -1,6 +1,7 @@
 package com.packges.judge.service;
 
 import com.packges.judge.dto.solucao.ResultadoExecucao;
+import com.packges.judge.dto.solucao.SolucaoCodigoResponse;
 import com.packges.judge.dto.solucao.SolucaoRequest;
 import com.packges.judge.dto.solucao.SolucaoResponse;
 import com.packges.judge.entity.Linguagem;
@@ -78,20 +79,14 @@ public class SolucaoService {
         return SolucaoResponse.from(solucao);
     }
 
-    /**
-     * Visível para o autor e para os avaliadores do grupo em que foi enviada.
-     */
     @Transactional(readOnly = true)
     public SolucaoResponse buscar(UUID id, UUID usuarioId) {
-        Solucao solucao = solucaoRepository.findById(id)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Solução", id));
+        return SolucaoResponse.from(obterVisivel(id, usuarioId));
+    }
 
-        boolean autor = solucao.getAutor().getId().equals(usuarioId);
-        boolean avaliador = solucao.getGrupo() != null && grupoService.isAvaliador(solucao.getGrupo().getId(), usuarioId);
-        if (!autor && !avaliador) {
-            throw new AcessoNegadoException("Sem permissão para visualizar esta solução");
-        }
-        return SolucaoResponse.from(solucao);
+    @Transactional(readOnly = true)
+    public SolucaoCodigoResponse buscarCodigo(UUID id, UUID usuarioId) {
+        return SolucaoCodigoResponse.from(obterVisivel(id, usuarioId));
     }
 
     /**
@@ -158,5 +153,20 @@ public class SolucaoService {
 
         log.info("Solução {} avaliada: {}", solucao.getId(), solucao.getVeredito());
         // TODO(sse): notificar o cliente (ADR-003)
+    }
+
+    /**
+     * Visível para o autor e para os avaliadores do grupo em que foi enviada.
+     */
+    private Solucao obterVisivel(UUID id, UUID usuarioId) {
+        Solucao solucao = solucaoRepository.findById(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Solução", id));
+
+        boolean autor = solucao.getAutor().getId().equals(usuarioId);
+        boolean avaliador = solucao.getGrupo() != null && grupoService.isAvaliador(solucao.getGrupo().getId(), usuarioId);
+        if (!autor && !avaliador) {
+            throw new AcessoNegadoException("Sem permissão para visualizar esta solução");
+        }
+        return solucao;
     }
 }

@@ -220,6 +220,12 @@ public class GrupoService {
                 .orElse(false);
     }
 
+    List<UUID> idsDosGrupos(UUID usuarioId) {
+        return membroRepository.findByUsuarioId(usuarioId).stream()
+                .map(membro -> membro.getGrupo().getId())
+                .toList();
+    }
+
     boolean contemAtividade(UUID grupoId, UUID atividadeId) {
         return itemRepository.existsByGrupoIdAndAtividadeId(grupoId, atividadeId);
     }

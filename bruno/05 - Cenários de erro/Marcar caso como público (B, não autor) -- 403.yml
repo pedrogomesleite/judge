@@ -1,0 +1,29 @@
+info:
+  name: Marcar caso como público (B, não autor) -> 403
+  type: http
+  seq: 12
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/activities/{{activityId}}/test-cases/{{testCaseId}}"
+  body:
+    type: json
+    data: |-
+      {
+        "publico": false
+      }
+  auth:
+    type: bearer
+    token: "{{tokenB}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "403"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

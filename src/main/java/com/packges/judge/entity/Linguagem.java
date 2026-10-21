@@ -30,4 +30,10 @@ public class Linguagem {
 
     @Column(nullable = false)
     private boolean ativa;
+
+    /**
+     * Extensão dos arquivos de código, sem o ponto (ex.: cpp), usada no download das soluções.
+     * Anulável no banco porque o ddl-auto=update não cria coluna NOT NULL em tabela com linhas; o LinguagemSeeder preenche.
+     */
+    private String extensao;
 }

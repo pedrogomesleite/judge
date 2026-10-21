@@ -8,13 +8,18 @@ import FileUpload, { type FileUploadUploaderEvent } from 'primevue/fileupload'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+import CasosCompartilhados from '@/components/CasosCompartilhados.vue'
+import CasosDeTesteLista from '@/components/CasosDeTesteLista.vue'
+import CasosOficiaisCard from '@/components/CasosOficiaisCard.vue'
+import NovoCasoDeTesteDialog from '@/components/NovoCasoDeTesteDialog.vue'
 import ResultadoTag from '@/components/ResultadoTag.vue'
 import { usePolling } from '@/composables/usePolling'
 import { buscarAtividade } from '@/api/atividades'
+import { listarCasosCompartilhados, listarCasosPublicos } from '@/api/casosDeTeste'
 import { mensagemDeErro } from '@/api/http'
 import { listarLinguagens } from '@/api/linguagens'
 import { buscarSolucao, enviarSolucao } from '@/api/solucoes'
-import type { AtividadeResponse, LinguagemResponse, SolucaoResponse } from '@/api/types'
+import type { AtividadeResponse, CasoDeTesteResponse, LinguagemResponse, SolucaoResponse } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { comUnidade } from '@/utils/formatacao'
 import { classificar } from '@/utils/rotulos'
@@ -40,6 +45,13 @@ const atividade = ref<AtividadeResponse | null>(null)
 const linguagens = ref<LinguagemResponse[]>([])
 const carregando = ref(true)
 const erroCarregamento = ref<string | null>(null)
+
+const casosPublicos = ref<CasoDeTesteResponse[]>([])
+const casosCompartilhados = ref<CasoDeTesteResponse[]>([])
+const erroCasos = ref<string | null>(null)
+const compartilhandoCaso = ref(false)
+
+const ehAutor = computed(() => !!atividade.value && auth.usuario?.id === atividade.value.autorId)
 
 const linguagemId = ref<string | null>(null)
 const codigo = ref('')
@@ -75,6 +87,21 @@ async function carregar() {
 }
 
 watch(() => props.id, carregar, { immediate: true })
+
+// Exemplos (casos públicos) para todos; os casos dos grupos só para quem está logado.
+// Carregados de forma independente: uma falha nos casos dos grupos não esconde os exemplos
+async function carregarCasos() {
+  const [publicos, compartilhados] = await Promise.allSettled([
+    listarCasosPublicos(props.id),
+    auth.autenticado ? listarCasosCompartilhados(props.id) : Promise.resolve<CasoDeTesteResponse[]>([]),
+  ])
+  casosPublicos.value = publicos.status === 'fulfilled' ? publicos.value : []
+  casosCompartilhados.value = compartilhados.status === 'fulfilled' ? compartilhados.value : []
+  const falha = [publicos, compartilhados].find((r): r is PromiseRejectedResult => r.status === 'rejected')
+  erroCasos.value = falha ? mensagemDeErro(falha.reason) : null
+}
+
+watch([() => props.id, () => auth.autenticado], carregarCasos, { immediate: true })
 
 async function carregarArquivo(evento: FileUploadUploaderEvent) {
   const arquivo = Array.isArray(evento.files) ? evento.files[0] : evento.files
@@ -171,6 +198,49 @@ function restaurarRascunho() {
         </Card>
       </div>
 
+      <Card v-if="casosPublicos.length">
+        <template #content>
+          <CasosDeTesteLista :casos="casosPublicos" rotulo="Exemplo" />
+        </template>
+      </Card>
+
+      <Card v-if="auth.autenticado && (casosCompartilhados.length || grupoId)">
+        <template #title>
+          <div class="row">
+            <span>Casos compartilhados nos seus grupos</span>
+            <span class="spacer" />
+            <Button
+              v-if="grupoId"
+              label="Compartilhar caso no grupo"
+              icon="pi pi-share-alt"
+              size="small"
+              @click="compartilhandoCaso = true"
+            />
+          </div>
+        </template>
+        <template #subtitle>
+          Criados por membros dos grupos de que você participa. Servem para testar e não contam no veredito.
+        </template>
+        <template #content>
+          <CasosCompartilhados
+            v-if="casosCompartilhados.length"
+            :casos="casosCompartilhados"
+            :grupo-atual-id="grupoId"
+          />
+          <span v-else class="texto-suave">Nenhum caso compartilhado nos seus grupos para esta atividade ainda.</span>
+        </template>
+      </Card>
+
+      <Message v-if="erroCasos" severity="warn">Não foi possível carregar os casos de teste: {{ erroCasos }}</Message>
+
+      <NovoCasoDeTesteDialog
+        v-if="grupoId"
+        v-model:visible="compartilhandoCaso"
+        :atividade-id="atividade.id"
+        :grupo-id="grupoId"
+        @criado="carregarCasos"
+      />
+
       <Card>
         <template #title>Enviar resposta</template>
         <template #content>
@@ -247,6 +317,8 @@ function restaurarRascunho() {
           </form>
         </template>
       </Card>
+
+      <CasosOficiaisCard v-if="ehAutor" :atividade-id="atividade.id" @publicos-alterados="carregarCasos" />
     </template>
   </section>
 </template>

@@ -48,6 +48,32 @@ export interface AtividadeResponse {
   criadoEm: string
 }
 
+export type TipoCasoDeTeste = 'OFICIAL' | 'COMUNITARIO'
+
+export interface CasoDeTesteRequest {
+  entrada: string
+  saidaEsperada: string
+  tipo: TipoCasoDeTeste
+  /** Obrigatório para COMUNITARIO e ignorado para OFICIAL. */
+  grupoId: string | null
+  /** Só para OFICIAL: um caso comunitário público é recusado (422). */
+  publico: boolean
+}
+
+export interface CasoDeTesteResponse {
+  id: string
+  atividadeId: string
+  autorId: string
+  /** Só nos casos COMUNITARIO: o grupo em que o caso foi compartilhado. */
+  grupoId: string | null
+  grupoNome: string | null
+  tipo: TipoCasoDeTeste
+  /** Só nos casos OFICIAL: aparece como exemplo para qualquer pessoa. */
+  publico: boolean
+  entrada: string
+  saidaEsperada: string
+}
+
 export interface LinguagemResponse {
   id: string
   nome: string
@@ -71,6 +97,13 @@ export interface GrupoAtividadeItemResponse {
   ordem: number
 }
 
+export interface MembroResponse {
+  usuarioId: string
+  nome: string
+  papel: PapelGrupo
+  entrouEm: string
+}
+
 export interface SolucaoRequest {
   atividadeId: string
   linguagemId: string
@@ -90,6 +123,14 @@ export interface SolucaoResponse {
   tempoMs: number | null
   memoriaKb: number | null
   enviadoEm: string
+}
+
+export interface SolucaoCodigoResponse {
+  id: string
+  linguagem: string
+  /** Extensão do arquivo na linguagem da solução, sem o ponto (ex.: cpp). */
+  extensao: string
+  codigo: string
 }
 
 export interface ErroResponse {

@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import DataTable, { type DataTableRowExpandEvent } from 'primevue/datatable'
 import Column from 'primevue/column'
 import Tag from 'primevue/tag'
 import Message from 'primevue/message'
 import { useToast } from 'primevue/usetoast'
+import ConviteLink from '@/components/ConviteLink.vue'
+import EnviosDoGrupo from '@/components/EnviosDoGrupo.vue'
 import { listarAtividadesDoGrupo } from '@/api/grupos'
 import { mensagemDeErro } from '@/api/http'
 import type { GrupoAtividadeItemResponse, GrupoResponse } from '@/api/types'
 import { formatarPeriodo } from '@/utils/formatacao'
 import { ROTULOS_STATUS_GRUPO } from '@/utils/rotulos'
 
-defineProps<{
+const props = defineProps<{
   grupos: GrupoResponse[]
   carregando: boolean
   vazio: string
+  /** Grupo que já abre expandido (ex.: o que acabou de ser acessado pelo convite). */
+  expandirGrupoId?: string | null
 }>()
 
 const toast = useToast()
@@ -27,8 +31,7 @@ function rotuloDoStatus(grupo: GrupoResponse) {
   return ROTULOS_STATUS_GRUPO[grupo.status]
 }
 
-async function aoExpandir(evento: DataTableRowExpandEvent<GrupoResponse>) {
-  const grupoId = evento.data.id
+async function carregarAtividades(grupoId: string) {
   if (atividadesPorGrupo.value[grupoId]) {
     return
   }
@@ -39,6 +42,23 @@ async function aoExpandir(evento: DataTableRowExpandEvent<GrupoResponse>) {
     toast.add({ severity: 'error', summary: 'Erro ao carregar as atividades do grupo', detail: mensagemDeErro(e), life: 5000 })
   }
 }
+
+function aoExpandir(evento: DataTableRowExpandEvent<GrupoResponse>) {
+  carregarAtividades(evento.data.id)
+}
+
+// Expandir pelo v-model não dispara row-expand, então as atividades são carregadas aqui
+watch(
+  () => props.grupos,
+  (grupos) => {
+    const grupoId = props.expandirGrupoId
+    if (grupoId && grupos.some((g) => g.id === grupoId)) {
+      expandidas.value = { ...expandidas.value, [grupoId]: true }
+      carregarAtividades(grupoId)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -81,6 +101,12 @@ async function aoExpandir(evento: DataTableRowExpandEvent<GrupoResponse>) {
         <span v-else-if="atividadesPorGrupo[data.id]?.length === 0" class="texto-suave">
           Nenhuma atividade neste grupo.
         </span>
+        <!-- Avaliador: consolidação dos envios dos membros, por atividade -->
+        <EnviosDoGrupo
+          v-else-if="data.meuPapel === 'AVALIADOR'"
+          :grupo-id="data.id"
+          :atividades="atividadesPorGrupo[data.id] ?? []"
+        />
         <ol v-else class="atividades">
           <li v-for="atividade in atividadesPorGrupo[data.id]" :key="atividade.atividadeId">
             <RouterLink
@@ -90,6 +116,9 @@ async function aoExpandir(evento: DataTableRowExpandEvent<GrupoResponse>) {
             </RouterLink>
           </li>
         </ol>
+
+        <!-- Qualquer membro compartilha o convite; grupo finalizado não aceita novas entradas -->
+        <ConviteLink v-if="data.status !== 'FINALIZADO'" :codigo-convite="data.codigoConvite" />
       </div>
     </template>
   </DataTable>

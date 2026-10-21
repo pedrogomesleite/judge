@@ -18,22 +18,32 @@ import org.springframework.transaction.annotation.Transactional;
 public class LinguagemSeeder implements ApplicationRunner {
 
     private static final String NOME_CPP = "C++";
+    private static final String EXTENSAO_CPP = "cpp";
 
     private final LinguagemRepository linguagemRepository;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (linguagemRepository.findByNome(NOME_CPP).isPresent()) {
-            return;
-        }
+        linguagemRepository.findByNome(NOME_CPP).ifPresentOrElse(this::completarExtensao, this::cadastrarCpp);
+    }
 
+    private void cadastrarCpp() {
         Linguagem cpp = new Linguagem();
         cpp.setNome(NOME_CPP);
         cpp.setVersao("g++ (C++17)");
         cpp.setFila("submissions.cpp");
+        cpp.setExtensao(EXTENSAO_CPP);
         cpp.setAtiva(true);
         linguagemRepository.save(cpp);
         log.info("Linguagem {} cadastrada", NOME_CPP);
+    }
+
+    /** Bancos criados antes da coluna extensao: o ddl-auto=update adiciona a coluna vazia. */
+    private void completarExtensao(Linguagem cpp) {
+        if (cpp.getExtensao() == null) {
+            cpp.setExtensao(EXTENSAO_CPP);
+            log.info("Extensão da linguagem {} preenchida", NOME_CPP);
+        }
     }
 }

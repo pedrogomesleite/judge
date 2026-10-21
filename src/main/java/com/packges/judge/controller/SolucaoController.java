@@ -1,5 +1,6 @@
 package com.packges.judge.controller;
 
+import com.packges.judge.dto.solucao.SolucaoCodigoResponse;
 import com.packges.judge.dto.solucao.SolucaoRequest;
 import com.packges.judge.dto.solucao.SolucaoResponse;
 import com.packges.judge.security.UsuarioAtual;
@@ -39,6 +40,11 @@ public class SolucaoController {
     @GetMapping("/{id}")
     public SolucaoResponse buscar(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
         return solucaoService.buscar(id, UsuarioAtual.id(jwt));
+    }
+
+    @GetMapping("/{id}/code")
+    public SolucaoCodigoResponse buscarCodigo(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return solucaoService.buscarCodigo(id, UsuarioAtual.id(jwt));
     }
 
     @GetMapping

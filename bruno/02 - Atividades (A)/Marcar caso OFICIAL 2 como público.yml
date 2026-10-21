@@ -1,0 +1,37 @@
+info:
+  name: Marcar caso OFICIAL 2 como público
+  type: http
+  seq: 12
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/activities/{{activityId}}/test-cases/{{testCaseId}}"
+  body:
+    type: json
+    data: |-
+      {
+        "publico": true
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  variables:
+    - name: testCaseId
+      value: e839712d-dd62-4886-b295-7728702dab15
+    - name: activityId
+      value: 1c989304-e5b3-461a-ae01-09498b963cdb
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.publico
+      operator: eq
+      value: "true"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

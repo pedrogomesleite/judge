@@ -24,6 +24,15 @@ runtime:
     - expression: res.status
       operator: eq
       value: "201"
+  actions:
+    - type: set-variable
+      phase: after-response
+      selector:
+        expression: res.body.id
+        method: jsonq
+      variable:
+        name: communityTestCaseId
+        scope: runtime
 
 settings:
   encodeUrl: true

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import Tabs from 'primevue/tabs'
 import TabList from 'primevue/tablist'
 import Tab from 'primevue/tab'
@@ -11,7 +12,10 @@ import { listarMeusGrupos } from '@/api/grupos'
 import { mensagemDeErro } from '@/api/http'
 import type { GrupoResponse, PapelGrupo } from '@/api/types'
 
+const route = useRoute()
 const toast = useToast()
+
+const grupoIdDestacado = computed(() => (typeof route.query.groupId === 'string' ? route.query.groupId : null))
 
 const grupos = ref<GrupoResponse[]>([])
 const carregando = ref(true)
@@ -23,8 +27,11 @@ const comoEstudante = computed(() => grupos.value.filter((g) => g.meuPapel === '
 onMounted(async () => {
   try {
     grupos.value = await listarMeusGrupos()
-    // Abre direto na aba que tem grupos
-    if (comoAvaliador.value.length === 0 && comoEstudante.value.length > 0) {
+    const destacado = grupos.value.find((g) => g.id === grupoIdDestacado.value)
+    // Abre na aba do grupo destacado ou, sem ele, direto na aba que tem grupos
+    if (destacado) {
+      aba.value = destacado.meuPapel
+    } else if (comoAvaliador.value.length === 0 && comoEstudante.value.length > 0) {
       aba.value = 'ESTUDANTE'
     }
   } catch (e) {
@@ -39,7 +46,10 @@ onMounted(async () => {
   <section class="stack">
     <div>
       <h1>Meus grupos</h1>
-      <span class="texto-suave">Expanda um grupo para ver as atividades e enviar respostas nele.</span>
+      <span class="texto-suave">
+        Expanda um grupo para ver as atividades, enviar respostas nele e copiar o link de convite. Nos grupos que você
+        avalia, acompanhe também os envios de cada membro.
+      </span>
     </div>
 
     <Tabs v-model:value="aba">
@@ -58,6 +68,7 @@ onMounted(async () => {
           <GruposTabela
             :grupos="comoAvaliador"
             :carregando="carregando"
+            :expandir-grupo-id="grupoIdDestacado"
             vazio="Você ainda não avalia nenhum grupo."
           />
         </TabPanel>
@@ -65,6 +76,7 @@ onMounted(async () => {
           <GruposTabela
             :grupos="comoEstudante"
             :carregando="carregando"
+            :expandir-grupo-id="grupoIdDestacado"
             vazio="Você ainda não participa de nenhum grupo como estudante."
           />
         </TabPanel>

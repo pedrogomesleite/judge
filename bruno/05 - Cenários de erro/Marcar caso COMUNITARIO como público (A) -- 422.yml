@@ -1,0 +1,29 @@
+info:
+  name: Marcar caso COMUNITARIO como público (A) -> 422
+  type: http
+  seq: 13
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/activities/{{activityId}}/test-cases/{{communityTestCaseId}}"
+  body:
+    type: json
+    data: |-
+      {
+        "publico": true
+      }
+  auth:
+    type: bearer
+    token: "{{tokenA}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "422"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

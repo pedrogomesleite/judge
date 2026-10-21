@@ -1,0 +1,33 @@
+info:
+  name: Caso COMUNITARIO público (B) -> 422
+  type: http
+  seq: 10
+
+http:
+  method: POST
+  url: "{{baseUrl}}/api/activities/{{activityId}}/test-cases"
+  body:
+    type: json
+    data: |-
+      {
+        "entrada": "1 1\n",
+        "saidaEsperada": "2\n",
+        "tipo": "COMUNITARIO",
+        "grupoId": "{{groupId}}",
+        "publico": true
+      }
+  auth:
+    type: bearer
+    token: "{{tokenB}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "422"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

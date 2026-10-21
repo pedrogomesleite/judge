@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.util.UUID;
 
@@ -41,4 +42,9 @@ public class CasoDeTeste {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TipoCasoDeTeste tipo;
+
+    /** Só para casos OFICIAL: o caso aparece como exemplo para qualquer pessoa, inclusive sem login. */
+    @ColumnDefault("false")
+    @Column(nullable = false)
+    private boolean publico;
 }

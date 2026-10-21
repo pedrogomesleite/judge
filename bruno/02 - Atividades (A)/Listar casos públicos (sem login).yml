@@ -1,0 +1,27 @@
+info:
+  name: Listar casos públicos (sem login)
+  type: http
+  seq: 11
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/activities/{{activityId}}/test-cases/public"
+  auth: inherit
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.length
+      operator: eq
+      value: "1"
+    - expression: res.body[0].publico
+      operator: eq
+      value: "true"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

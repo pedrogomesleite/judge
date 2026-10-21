@@ -2,6 +2,7 @@ package com.packges.judge.controller;
 
 import com.packges.judge.dto.atividade.AtividadeRequest;
 import com.packges.judge.dto.atividade.AtividadeResponse;
+import com.packges.judge.dto.atividade.CasoDeTestePublicoRequest;
 import com.packges.judge.dto.atividade.CasoDeTesteRequest;
 import com.packges.judge.dto.atividade.CasoDeTesteResponse;
 import com.packges.judge.security.UsuarioAtual;
@@ -12,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -68,5 +70,24 @@ public class AtividadeController {
                                                         @RequestParam(required = false) UUID groupId,
                                                         @AuthenticationPrincipal Jwt jwt) {
         return atividadeService.listarCasosDeTeste(id, groupId, UsuarioAtual.id(jwt));
+    }
+
+    @PatchMapping("/{id}/test-cases/{casoId}")
+    public CasoDeTesteResponse alterarCasoDeTeste(@PathVariable UUID id,
+                                                  @PathVariable UUID casoId,
+                                                  @Valid @RequestBody CasoDeTestePublicoRequest request,
+                                                  @AuthenticationPrincipal Jwt jwt) {
+        return atividadeService.alterarPublico(id, casoId, request.publico(), UsuarioAtual.id(jwt));
+    }
+
+    @GetMapping("/{id}/test-cases/public")
+    public List<CasoDeTesteResponse> listarCasosDeTestePublicos(@PathVariable UUID id) {
+        return atividadeService.listarCasosPublicos(id);
+    }
+
+    @GetMapping("/{id}/test-cases/shared")
+    public List<CasoDeTesteResponse> listarCasosDeTesteCompartilhados(@PathVariable UUID id,
+                                                                      @AuthenticationPrincipal Jwt jwt) {
+        return atividadeService.listarCasosCompartilhados(id, UsuarioAtual.id(jwt));
     }
 }
