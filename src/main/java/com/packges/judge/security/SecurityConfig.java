@@ -5,7 +5,9 @@ import jakarta.servlet.DispatcherType;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -23,6 +25,8 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -30,10 +34,28 @@ import java.nio.charset.StandardCharsets;
 
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, RunnerProperties.class})
 public class SecurityConfig {
 
+    /**
+     * Endpoints internos usados pelo runner (/api/internal/**). São autenticados pelo token de serviço do runner, e não
+     * pelo JWT dos usuários (ADR-008).
+     */
     @Bean
+    @Order(1)
+    public SecurityFilterChain runnerFilterChain(HttpSecurity http, RunnerProperties runnerProperties) throws Exception {
+        http
+                .securityMatcher("/api/internal/**")
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(sessao -> sessao.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterBefore(new RunnerTokenFilter(runnerProperties.token()), AuthorizationFilter.class)
+                .authorizeHttpRequests(auth -> auth.anyRequest().hasRole(RunnerTokenFilter.PAPEL))
+                .exceptionHandling(erros -> erros.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
+        return http.build();
+    }
+
+    @Bean
+    @Order(2)
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)

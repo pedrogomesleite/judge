@@ -33,6 +33,14 @@ A primeira implementação é um stream **por grupo**, usado na tela do grupo:
 
 O stream por solução (`/api/submissions/{id}/events`) continua como evolução; enquanto isso, a tela da atividade consulta o status por polling.
 
+## Implementação (2026-10-22): stream por solução
+Com o runner real ([ADR-006](006-rabbitmq-mensageria.md), [ADR-008](008-runner-java-casos-endpoint-interno.md)), a tela da atividade troca o polling pelo stream da solução:
+- `GET /api/submissions/{id}/events` (`SseEmitter`, `EventosSolucaoService`), com as mesmas permissões do `GET /api/submissions/{id}`: o autor e os avaliadores do grupo da solução. Os erros (403/404) chegam como `ErroResponse`, como no stream do grupo.
+- Diferente do stream do grupo, os eventos **levam dados**: o nome do evento é o status (`PENDENTE`, `EM_EXECUCAO`, `CONCLUIDA`, `FALHA`) e o dado é o `SolucaoResponse`. Os inscritos já passaram pela verificação de permissão, e o conteúdo é o mesmo do GET.
+- O primeiro evento é o estado atual, e o stream é encerrado depois do veredito. O cliente reconecta com espera crescente enquanto a solução não termina; como cada conexão começa pelo estado atual, nada se perde. O cliente nunca deixa o status regredir, o que cobre a corrida entre a leitura inicial e um evento da mesma mudança.
+- O `SolucaoService` publica `SolucaoAlteradaEvent` a cada mudança de status, e o envio acontece depois do commit. O heartbeat (25 s) e o mapa de inscrições em memória são compartilhados com o stream do grupo (`InscricoesSse`), com a mesma ressalva sobre várias réplicas.
+- A lista "minhas respostas" (`SolucoesView`) continua com polling enquanto houver solução em avaliação.
+
 ## Alternativas consideradas
 - **Polling** (`GET` periódico): o mais simples, porém gera muitas requisições e tem latência proporcional ao intervalo.
 - **WebSocket**: bidirecional, o que é desnecessário aqui, e mais complexo (protocolo próprio, STOMP, sessões).

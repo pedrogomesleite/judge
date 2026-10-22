@@ -1,5 +1,6 @@
 package com.packges.judge.service;
 
+import com.packges.judge.dto.solucao.PedidoExecucao;
 import com.packges.judge.dto.solucao.ResultadoExecucao;
 import com.packges.judge.dto.solucao.SolucaoCodigoResponse;
 import com.packges.judge.dto.solucao.SolucaoRequest;
@@ -12,11 +13,14 @@ import com.packges.judge.enums.PapelGrupo;
 import com.packges.judge.enums.StatusGrupo;
 import com.packges.judge.enums.StatusSolucao;
 import com.packges.judge.enums.TipoAlteracaoGrupo;
+import com.packges.judge.enums.TipoCasoDeTeste;
 import com.packges.judge.enums.Veredito;
 import com.packges.judge.exception.AcessoNegadoException;
 import com.packges.judge.exception.RecursoNaoEncontradoException;
 import com.packges.judge.exception.RegraNegocioException;
 import com.packges.judge.messaging.GrupoAlteradoEvent;
+import com.packges.judge.messaging.PublicacaoPendente;
+import com.packges.judge.messaging.SolucaoAlteradaEvent;
 import com.packges.judge.messaging.SolucaoEnviadaEvent;
 import com.packges.judge.repository.CasoDeTesteRepository;
 import com.packges.judge.repository.LinguagemRepository;
@@ -25,10 +29,13 @@ import com.packges.judge.repository.SolucaoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -72,12 +79,9 @@ public class SolucaoService {
         solucaoRepository.save(solucao);
         log.info("Solução {} recebida (atividade {}, linguagem {})", solucao.getId(), request.atividadeId(), linguagem.getNome());
 
-        // TODO(rabbitmq): um @TransactionalEventListener(AFTER_COMMIT) publica este evento em linguagem.getFila()
-        //  e grava publicadaEm; + job de reconciliação das não publicadas (ADR-006, ADR-007).
-        //  Enquanto isso, o RunnerSimulado responde.
-        eventPublisher.publishEvent(new SolucaoEnviadaEvent(
-                solucao.getId(), request.atividadeId(), linguagem.getFila(), solucao.getCodigo()));
-        notificarGrupo(solucao);
+        // Publicada na fila da linguagem depois do commit (PublicadorSolucoes, ADR-007)
+        eventPublisher.publishEvent(new SolucaoEnviadaEvent(solucao.getId()));
+        notificar(solucao);
 
         return SolucaoResponse.from(solucao);
     }
@@ -110,29 +114,60 @@ public class SolucaoService {
     }
 
     /**
-     * Marca a solução como EM_EXECUCAO. Só altera soluções PENDENTE, então é idempotente.
+     * Pedido de execução de uma solução ainda não publicada (PENDENTE e sem publicadaEm), com a fila da linguagem.
+     * Vazio se a solução não existir ou se já tiver sido publicada ou processada.
      */
-    // TODO(rabbitmq): chamado quando o runner sinalizar o início da execução (hoje: RunnerSimulado)
+    @Transactional(readOnly = true)
+    public Optional<PublicacaoPendente> prepararPublicacao(UUID solucaoId) {
+        return solucaoRepository.findById(solucaoId)
+                .filter(solucao -> solucao.getStatus() == StatusSolucao.PENDENTE && solucao.getPublicadaEm() == null)
+                .map(solucao -> new PublicacaoPendente(solucao.getLinguagem().getFila(), new PedidoExecucao(
+                        solucao.getId(),
+                        solucao.getAtividade().getId(),
+                        solucao.getLinguagem().getNome(),
+                        solucao.getCodigo(),
+                        solucao.getAtividade().getLimiteTempoMs(),
+                        solucao.getAtividade().getLimiteMemoriaMb(),
+                        casoDeTesteRepository.findIdsByAtividadeIdAndTipo(solucao.getAtividade().getId(), TipoCasoDeTeste.OFICIAL)
+                )));
+    }
+
+    /** Grava publicadaEm depois que o broker confirma a publicação (ADR-007). */
     @Transactional
-    public void marcarEmExecucao(UUID solucaoId) {
-        solucaoRepository.findById(solucaoId)
-                .filter(solucao -> solucao.getStatus() == StatusSolucao.PENDENTE)
-                .ifPresent(solucao -> {
-                    solucao.setStatus(StatusSolucao.EM_EXECUCAO);
-                    notificarGrupo(solucao);
-                });
+    public void marcarPublicada(UUID solucaoId) {
+        solucaoRepository.marcarPublicada(solucaoId, Instant.now());
+    }
+
+    /** Ids das soluções PENDENTE sem publicadaEm enviadas antes do instante informado, até o limite. */
+    @Transactional(readOnly = true)
+    public List<UUID> listarNaoPublicadas(Instant enviadaAntesDe, int limite) {
+        return solucaoRepository.findIdsNaoPublicadas(enviadaAntesDe, PageRequest.of(0, limite));
     }
 
     /**
-     * Registra o resultado produzido pelo runner. É idempotente, porque o RabbitMQ entrega at-least-once.
+     * Marca a solução como EM_EXECUCAO quando o runner avisa que começou (EXECUCAO_INICIADA). Só altera soluções
+     * PENDENTE, então é idempotente e não desfaz um resultado que tenha chegado antes do aviso.
      */
-    // TODO(rabbitmq): chamado pelo @RabbitListener da fila submissions.results (hoje: RunnerSimulado)
+    @Transactional
+    public void marcarEmExecucao(UUID solucaoId) {
+        if (solucaoRepository.marcarEmExecucao(solucaoId) > 0) {
+            solucaoRepository.findById(solucaoId).ifPresent(this::notificar);
+        }
+    }
+
+    /**
+     * Registra o resultado produzido pelo runner (EXECUCAO_CONCLUIDA). É idempotente, porque o RabbitMQ entrega
+     * at-least-once, e trava a linha para que entregas repetidas não gravem os casos duas vezes.
+     */
     @Transactional
     public void registrarResultado(ResultadoExecucao resultado) {
-        Solucao solucao = solucaoRepository.findById(resultado.solucaoId())
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Solução", resultado.solucaoId()));
-
-        if (solucao.getStatus() == StatusSolucao.CONCLUIDA || solucao.getStatus() == StatusSolucao.FALHA) {
+        Optional<Solucao> encontrada = solucaoRepository.findByIdParaAtualizar(resultado.solucaoId());
+        if (encontrada.isEmpty()) {
+            log.warn("Resultado ignorado: solução {} não encontrada", resultado.solucaoId());
+            return;
+        }
+        Solucao solucao = encontrada.get();
+        if (finalizada(solucao)) {
             log.warn("Resultado duplicado ignorado para a solução {}", solucao.getId());
             return;
         }
@@ -158,11 +193,35 @@ public class SolucaoService {
         }
 
         log.info("Solução {} avaliada: {}", solucao.getId(), solucao.getVeredito());
-        notificarGrupo(solucao);
+        notificar(solucao);
     }
 
-    /** Soluções de grupo atualizam, em tempo real, as listas de envios e o placar do grupo (SSE, ADR-003). */
-    private void notificarGrupo(Solucao solucao) {
+    /**
+     * Marca a solução como FALHA (ERRO_INTERNO) quando a mensagem dela foi para a DLQ: o runner não conseguiu
+     * executá-la ou o resultado não pôde ser gravado. Ignora soluções já finalizadas.
+     */
+    @Transactional
+    public void registrarFalha(UUID solucaoId) {
+        solucaoRepository.findByIdParaAtualizar(solucaoId)
+                .filter(solucao -> !finalizada(solucao))
+                .ifPresentOrElse(solucao -> {
+                    solucao.setStatus(StatusSolucao.FALHA);
+                    solucao.setVeredito(Veredito.ERRO_INTERNO);
+                    log.warn("Solução {} marcada como FALHA", solucaoId);
+                    notificar(solucao);
+                }, () -> log.warn("Falha ignorada: solução {} não encontrada ou já finalizada", solucaoId));
+    }
+
+    private static boolean finalizada(Solucao solucao) {
+        return solucao.getStatus() == StatusSolucao.CONCLUIDA || solucao.getStatus() == StatusSolucao.FALHA;
+    }
+
+    /**
+     * Avisa quem acompanha a solução (SSE por solução) e, nas soluções de grupo, as listas de envios e o placar do grupo
+     * (SSE do grupo). Os dois avisos saem depois do commit (ADR-003).
+     */
+    private void notificar(Solucao solucao) {
+        eventPublisher.publishEvent(new SolucaoAlteradaEvent(SolucaoResponse.from(solucao)));
         if (solucao.getGrupo() != null) {
             eventPublisher.publishEvent(new GrupoAlteradoEvent(solucao.getGrupo().getId(), TipoAlteracaoGrupo.SOLUCOES));
         }

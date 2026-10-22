@@ -7,3 +7,36 @@ services:
       - 'POSTGRES_USER=myuser'
     ports:
       - '5432'
+
+  # Mensageria entre a API e os runners (ADR-006). Administração em http://localhost:15672 (juizin/juizin)
+  rabbitmq:
+    image: 'rabbitmq:4-management'
+    # Nome de nó fixo: os dados do volume ficam ligados a ele e sobrevivem à recriação do container
+    hostname: rabbitmq
+    environment:
+      - 'RABBITMQ_DEFAULT_USER=juizin'
+      - 'RABBITMQ_DEFAULT_PASS=juizin'
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    volumes:
+      - 'rabbitmq-data:/var/lib/rabbitmq'
+
+  # Runner C++ (ADR-002, ADR-005, ADR-008): privilegiado e com cgroup namespace próprio, por causa do isolate.
+  # A API roda fora do compose (na IDE), por isso o runner a acessa por host.docker.internal.
+  runner-cpp:
+    build: ./runner-cpp
+    privileged: true
+    cgroup: private
+    environment:
+      - 'RABBITMQ_HOST=rabbitmq'
+      - 'JUIZIN_RUNNER_API_URL=http://host.docker.internal:8080'
+      - 'JUIZIN_RUNNER_TOKEN=juizin-dev-runner-token-change-me-0123456789'
+      - 'JUIZIN_RUNNER_BOXES=2'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      - rabbitmq
+
+volumes:
+  rabbitmq-data:

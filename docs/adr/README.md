@@ -15,3 +15,4 @@ Cada ADR registra **uma** decisão técnica relevante, com o contexto, a decisã
 | [005](005-runner-container-privilegiado.md)          | Runner em container privilegiado com cgroups v2          | Aceita              |
 | [006](006-rabbitmq-mensageria.md)                    | RabbitMQ como mensageria entre API e runners             | Aceita              |
 | [007](007-publicacao-apos-commit-reconciliacao.md)   | Publicação após o commit com job de reconciliação        | Aceita              |
+| [008](008-runner-java-casos-endpoint-interno.md)     | Runner em Java/Spring Boot; casos de teste por endpoint interno | Aceita       |

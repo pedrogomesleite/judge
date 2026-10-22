@@ -1,2 +1,5 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+# Lidos dentro do container do runner (Linux): CRLF quebraria o script e a configuração do isolate
+*.sh text eol=lf
+*.cf text eol=lf

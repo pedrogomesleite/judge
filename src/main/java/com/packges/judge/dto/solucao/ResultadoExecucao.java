@@ -8,7 +8,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Resultado de execução produzido pelo runner. É o contrato da mensagem da fila submissions.results.
+ * Resultado de execução produzido pelo runner. É o contrato da mensagem EXECUCAO_CONCLUIDA da fila submissions.results.
+ * O runner executa os casos até a primeira falha, então casos traz só os casos executados.
  */
 public record ResultadoExecucao(
         @NotNull UUID solucaoId,

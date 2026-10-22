@@ -71,19 +71,43 @@ sequenceDiagram
     API-->>E: notifica (SSE) / GET /api/submissions/{id}
 ```
 
+O runner publica `EXECUCAO_INICIADA` em `submissions.results` assim que consome a mensagem (a solução passa para `EM_EXECUCAO`) e busca os casos de teste no endpoint interno (ver 3.3.1), usando o cache quando pode. O ack só sai depois que o broker confirma o resultado.
+
 > Os nomes técnicos de filas e endpoints (`submissions.*`, `/api/submissions`) são contratos técnicos e permanecem em inglês.
 
-> **Runner simulado (desenvolvimento):** enquanto a integração com o RabbitMQ é TODO, o `RunnerSimulado` consome o `SolucaoEnviadaEvent` dentro da própria API e devolve um veredito fictício: `ACEITA` por padrão, ou o veredito indicado pela diretiva `juizin-mock: <VEREDITO>` no código. Ele passa a solução por `EM_EXECUCAO` antes do resultado e é desligado com `juizin.runner.mock.enabled=false`.
+## 3.3.1 Contrato das mensagens
+
+As constantes ficam na classe `Mensageria`, espelhada na API (`com.packges.judge.messaging`) e no runner (`com.packges.runner.mensageria`). As duas pontas declaram as filas com os **mesmos argumentos**, então a ordem de subida não importa. Argumentos diferentes fazem o RabbitMQ recusar a declaração (`PRECONDITION_FAILED`).
+
+| Elemento                         | Definição                                                                                                                                                                      |
+|:---------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `juizin.submissions`             | Exchange direct durável. Cada fila é ligada com binding key igual ao próprio nome.                                                                                             |
+| `submissions.<lang>`             | Fila quorum da linguagem (`Linguagem.fila`), com `x-dead-letter-exchange=juizin.dlx` e `x-delivery-limit=3`. A API a declara sob demanda ao publicar, e o runner, ao subir.     |
+| `submissions.results`            | Fila quorum única de resultados, com os mesmos argumentos, consumida pela API.                                                                                                 |
+| `juizin.dlx` → `submissions.dlq` | Exchange fanout e fila quorum (sem DLX), consumida pela API.                                                                                                                   |
+
+O corpo é JSON, e o tipo vai no header `__TypeId__`:
+
+| `__TypeId__`         | Fila                  | Corpo                                                                                                            | Efeito na API                               |
+|:---------------------|:----------------------|:-----------------------------------------------------------------------------------------------------------------|:--------------------------------------------|
+| `PEDIDO_EXECUCAO`    | `submissions.<lang>`  | `solucaoId`, `atividadeId`, `linguagem`, `codigo`, `limiteTempoMs`, `limiteMemoriaMb`, `casosDeTesteIds`        | publicado pela API                          |
+| `EXECUCAO_INICIADA`  | `submissions.results` | `solucaoId`                                                                                                      | `PENDENTE → EM_EXECUCAO`                    |
+| `EXECUCAO_CONCLUIDA` | `submissions.results` | `solucaoId`, `veredito`, `tempoMs`, `memoriaKb`, `casos[]` (`casoDeTesteId`, `veredito`, `tempoMs`, `memoriaKb`) | `CONCLUIDA` (ou `FALHA`, se `ERRO_INTERNO`) |
+
+- **Publicação:** mensagens persistentes, publisher confirms e `mandatory` (uma mensagem sem fila de destino conta como falha). A API só grava `publicadaEm` depois do confirm ([ADR-007](adr/007-publicacao-apos-commit-reconciliacao.md)).
+- **Falhas:** a API e o runner tentam de novo, com espera crescente, e depois rejeitam a mensagem sem requeue, o que a manda para a DLQ. Na DLQ, um `PEDIDO_EXECUCAO` ou um `EXECUCAO_CONCLUIDA` marca a solução como `FALHA` (`ERRO_INTERNO`); um `EXECUCAO_INICIADA` é descartado.
+- **Casos de teste:** a mensagem leva só os ids. O runner lê os casos em `GET /api/internal/activities/{id}/test-cases`, com o token de serviço (`Authorization: Bearer <juizin.runner.token>`), e os guarda em cache pelo id, porque eles são imutáveis ([ADR-008](adr/008-runner-java-casos-endpoint-interno.md)).
+- **Execução:** os casos rodam em ordem, até o primeiro que falha. `casos[]` traz só os casos executados, e `tempoMs`/`memoriaKb` são os maiores entre eles.
 
 ## 3.4 Responsabilidades por componente e tecnologia
 
 | Componente    | Tecnologia                                                     | Responsável por                                                                                                                                                                                                                                                                                  | NÃO é responsável por                         |
 |:--------------|:---------------------------------------------------------------|:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------|
-| Frontend      | Vue 3 + Pinia + PrimeVue 4 (`juizin/`)                         | Catálogo público de atividades; editor e envio da solução; exibir status e veredito; tela do grupo por papel e status, atualizada pelo SSE do grupo (`/api/groups/{id}/events`); o status de uma solução fora da tela do grupo ainda é consultado por polling | Validar o resultado                           |
+| Frontend      | Vue 3 + Pinia + PrimeVue 4 (`juizin/`)                         | Catálogo público de atividades; editor e envio da solução; exibir status e veredito, atualizados pelo SSE da solução (`/api/submissions/{id}/events`); tela do grupo por papel e status, atualizada pelo SSE do grupo (`/api/groups/{id}/events`); a lista de respostas do usuário ainda usa polling | Validar o resultado                           |
 | Juizin API    | Spring Boot (Java 21)                                          | Autenticação; autorização por papel no grupo; validar a solução (linguagem suportada, tamanho do código, regras de grupo); persistir; publicar na fila da linguagem; consumir resultados; atualizar o status; notificar o cliente                                                                | Executar código do usuário                    |
 | Banco         | PostgreSQL                                                     | Fonte da verdade: usuários, atividades, casos de teste, grupos e membros, soluções e vereditos                                                                                                                                                                                                   | Transportar jobs                              |
 | Mensageria    | RabbitMQ                                                       | Desacoplar a API dos runners; servir de buffer em picos; rotear por linguagem (exchange direct, 1 fila por linguagem); distribuir a carga entre réplicas (competing consumers); retry e DLQ nativos; devolver resultados (`submissions.results`)                                                 | Executar ou isolar código; guardar estado final |
-| Runner C/C++  | Container Docker (imagem com g++ + isolate) + processo worker  | Consumir `submissions.cpp`; preparar o box; chamar o isolate para compilar e executar; ler o meta-arquivo; **comparar a saída** (normalizando espaços e quebras de linha finais); montar o veredito; publicar o resultado; confirmar (ack) a mensagem; limpar o box                                  | Persistir no banco; falar com o cliente       |
+| Runner C/C++  | Container Docker (`runner-cpp/`: g++ + isolate) + worker Java 21 / Spring Boot ([ADR-008](adr/008-runner-java-casos-endpoint-interno.md)) | Consumir `submissions.cpp`; buscar os casos de teste no endpoint interno (com cache); preparar o box; chamar o isolate para compilar e executar; ler o meta-arquivo; **comparar a saída** (normalizando espaços e quebras de linha finais); montar o veredito; publicar o resultado; confirmar (ack) a mensagem; limpar o box                                  | Persistir no banco; falar com o cliente       |
 | Sandbox       | **isolate**                                                    | Isolar **cada** compilação/execução: namespaces Linux (sem rede, PIDs e filesystem próprios), cgroups (limites de CPU, memória e nº de processos), limites de tempo (CPU e wall), tamanho máximo de arquivo, diretório de trabalho (box) descartável; relatar tempo, memória, exit code e sinal no meta-arquivo | Decidir o veredito; comparar a saída          |
 
 ## 3.5 Escalabilidade
@@ -105,14 +129,14 @@ A escalabilidade é desenhada para N linguagens, mas implementada inicialmente a
 - **Sem replay**: depois do ack, a mensagem deixa de existir. O PostgreSQL é a fonte da verdade.
 - Execuções longas não podem passar do `consumer_timeout` do RabbitMQ (padrão de 30 min).
 - Medir tempo de **CPU** (não wall) e fixar CPU por box para evitar o efeito de vizinho barulhento.
-- A mensagem leva o código e os IDs dos casos de teste; o runner busca e cacheia os casos.
+- A mensagem leva o código e os IDs dos casos de teste. O runner busca os casos no endpoint interno da API, com o token de serviço, e os guarda em cache (ver 3.3.1).
 
 ## 3.7 Decisões em aberto
 
 - Estados e vereditos da solução → seções 4.1 e 5.3.
 - Modelo de domínio → seção 5.
 - Decisões técnicas registradas como ADRs → seção 6 e [docs/adr](adr/README.md).
-- Linguagem de implementação do worker do runner (ex.: Java/Spring AMQP ou um processo leve) → definir no spike.
+- Linguagem de implementação do worker do runner → definida: Java 21 / Spring Boot ([ADR-008](adr/008-runner-java-casos-endpoint-interno.md)).
 
 # 4. Fluxos críticos de negócio
 
@@ -319,13 +343,15 @@ erDiagram
 
 - Senhas armazenadas apenas como hash (BCrypt).
 - Leitura pública: `GET /api/activities`, `GET /api/activities/{id}`, `GET /api/activities/{id}/test-cases/public` (só os casos oficiais marcados como públicos) e `GET /api/languages` não exigem login (catálogo para visitantes). Todo o resto exige JWT, inclusive os demais casos de teste.
+- Endpoints internos (`/api/internal/**`, hoje só `GET /api/internal/activities/{id}/test-cases`): usados pelo runner e autenticados por um token de serviço (`juizin.runner.token`, variável `JUIZIN_RUNNER_TOKEN`), numa chain própria do Spring Security, e não pelo JWT dos usuários.
 - As autorizações por papel no grupo são verificadas no `service`, não só no frontend.
 - O `codigoConvite` deve ser um token aleatório e não previsível (ex.: 128 bits, URL-safe). Como ele não é regenerado, um link vazado não pode ser revogado: **risco aceito por enquanto**.
 - Decisões de arquitetura registradas como ADRs em [docs/adr](adr/README.md):
     - [ADR-001](adr/001-kafka-mensageria.md): Kafka como mensageria entre API e runners (Substituída pelo ADR-006)
     - [ADR-002](adr/002-isolate-sandbox.md): isolate como sandbox de cada execução (Aceita)
-    - [ADR-003](adr/003-sse-notificacao-resultado.md): SSE para notificar o resultado ao cliente (Aceita; implementado no SSE do grupo)
+    - [ADR-003](adr/003-sse-notificacao-resultado.md): SSE para notificar o resultado ao cliente (Aceita; implementado no SSE do grupo e no SSE da solução)
     - [ADR-004](adr/004-transactional-outbox.md): Transactional Outbox para publicar soluções no Kafka (Substituída pelo ADR-007)
     - [ADR-005](adr/005-runner-container-privilegiado.md): runner em container privilegiado com cgroups v2 (Aceita)
     - [ADR-006](adr/006-rabbitmq-mensageria.md): RabbitMQ como mensageria entre API e runners (Aceita)
     - [ADR-007](adr/007-publicacao-apos-commit-reconciliacao.md): publicação após o commit com job de reconciliação (Aceita)
+    - [ADR-008](adr/008-runner-java-casos-endpoint-interno.md): worker do runner em Java/Spring Boot, com os casos de teste lidos de um endpoint interno (Aceita)

@@ -61,7 +61,8 @@ Quem abre o link de convite sem sessão passa pelo login (ou cadastro) e volta p
 - `src/router/index.ts`: rotas e guarda de autenticação (`meta.requiresAuth` / `meta.guestOnly`).
 - `src/views/`: telas. `src/components/`: componentes compartilhados.
 - `src/composables/useEventosDoGrupo.ts`: SSE do grupo (ADR-003) via `fetch` em streaming (`abrirStream` em `http.ts`), porque o `EventSource` não envia o JWT.
-- `src/composables/usePolling.ts`: acompanha o status de uma solução fora da tela do grupo, enquanto não há SSE por solução.
+- `src/composables/useEventosDaSolucao.ts`: SSE da solução (ADR-003) na tela da atividade. Mostra **Na fila**, **Em execução** e o veredito assim que o runner responde, e reconecta até o fim da avaliação.
+- `src/composables/usePolling.ts`: atualiza a lista de respostas (`SolucoesView`) enquanto houver solução em avaliação.
 
 ## Por que PrimeVue 4
 

@@ -13,12 +13,12 @@ import CasosDeTesteLista from '@/components/CasosDeTesteLista.vue'
 import CasosOficiaisCard from '@/components/CasosOficiaisCard.vue'
 import NovoCasoDeTesteDialog from '@/components/NovoCasoDeTesteDialog.vue'
 import ResultadoTag from '@/components/ResultadoTag.vue'
-import { usePolling } from '@/composables/usePolling'
+import { useEventosDaSolucao } from '@/composables/useEventosDaSolucao'
 import { buscarAtividade } from '@/api/atividades'
 import { listarCasosCompartilhados, listarCasosPublicos } from '@/api/casosDeTeste'
 import { mensagemDeErro } from '@/api/http'
 import { listarLinguagens } from '@/api/linguagens'
-import { buscarSolucao, enviarSolucao } from '@/api/solucoes'
+import { enviarSolucao } from '@/api/solucoes'
 import type { AtividadeResponse, CasoDeTesteResponse, LinguagemResponse, SolucaoResponse } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { comUnidade } from '@/utils/formatacao'
@@ -26,7 +26,6 @@ import { classificar } from '@/utils/rotulos'
 
 // Mesmo limite do SolucaoRequest.codigo
 const TAMANHO_MAXIMO_CODIGO = 65_536
-const INTERVALO_ACOMPANHAMENTO_MS = 2000
 
 interface Rascunho {
   linguagemId: string | null
@@ -67,11 +66,21 @@ const podeEnviar = computed(
   () => !!linguagemId.value && codigo.value.trim().length > 0 && !enviando.value && !emAvaliacao.value,
 )
 
-const { agendar } = usePolling(acompanharSolucao, () => emAvaliacao.value, INTERVALO_ACOMPANHAMENTO_MS)
+// O status e o veredito chegam pelo SSE da solução, até o fim da avaliação
+const { acompanhar, encerrar: encerrarAcompanhamento } = useEventosDaSolucao({
+  aoAtualizar: (atualizada) => {
+    solucao.value = atualizada
+    erroEnvio.value = null
+  },
+  aoNegar: (e) => {
+    erroEnvio.value = mensagemDeErro(e)
+  },
+})
 
 async function carregar() {
   carregando.value = true
   erroCarregamento.value = null
+  encerrarAcompanhamento()
   solucao.value = null
   try {
     const [dados, opcoes] = await Promise.all([buscarAtividade(props.id), listarLinguagens()])
@@ -123,23 +132,11 @@ async function enviar() {
       grupoId: grupoId.value,
       codigo: codigo.value,
     })
-    agendar()
+    acompanhar(solucao.value)
   } catch (e) {
     erroEnvio.value = mensagemDeErro(e)
   } finally {
     enviando.value = false
-  }
-}
-
-async function acompanharSolucao() {
-  if (!solucao.value) {
-    return
-  }
-  try {
-    solucao.value = await buscarSolucao(solucao.value.id)
-    erroEnvio.value = null
-  } catch (e) {
-    erroEnvio.value = mensagemDeErro(e)
   }
 }
 

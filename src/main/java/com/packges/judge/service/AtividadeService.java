@@ -2,6 +2,7 @@ package com.packges.judge.service;
 
 import com.packges.judge.dto.atividade.AtividadeRequest;
 import com.packges.judge.dto.atividade.AtividadeResponse;
+import com.packges.judge.dto.atividade.CasoDeTesteExecucaoResponse;
 import com.packges.judge.dto.atividade.CasoDeTesteRequest;
 import com.packges.judge.dto.atividade.CasoDeTesteResponse;
 import com.packges.judge.entity.Atividade;
@@ -160,6 +161,17 @@ public class AtividadeService {
         }
         return casoDeTesteRepository.findByAtividadeIdAndTipoAndGrupoIdIn(atividadeId, TipoCasoDeTeste.COMUNITARIO, grupoIds).stream()
                 .map(CasoDeTesteResponse::from)
+                .toList();
+    }
+
+    /**
+     * Casos oficiais com a entrada e a saída esperada, para o runner executar a solução (endpoint interno, ADR-008).
+     */
+    @Transactional(readOnly = true)
+    public List<CasoDeTesteExecucaoResponse> listarCasosOficiaisParaExecucao(UUID atividadeId) {
+        obterEntidade(atividadeId);
+        return casoDeTesteRepository.findByAtividadeIdAndTipo(atividadeId, TipoCasoDeTeste.OFICIAL).stream()
+                .map(CasoDeTesteExecucaoResponse::from)
                 .toList();
     }
 
