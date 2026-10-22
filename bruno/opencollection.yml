@@ -15,7 +15,8 @@ docs:
     - Tokens e ids são salvos em variáveis de runtime (pós-resposta) e usados pelos requests seguintes.
     - Usuário A (ana) = criador/avaliador do grupo. Usuário B (beto) = estudante que entra pelo convite.
     - As soluções são avaliadas pelo runner C++ de verdade (RabbitMQ + runner-cpp, ver compose.yaml):
-      suba os dois antes da pasta 04. O veredito costuma chegar em poucos segundos.
+      suba o ambiente com `docker compose up -d --build` (ou, com a API na IDE, o rabbitmq e o runner-cpp)
+      antes da pasta 04. O veredito costuma chegar em poucos segundos.
   type: text/markdown
 bundled: false
 extensions:

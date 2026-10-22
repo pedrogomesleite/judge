@@ -1,0 +1,4 @@
+# Contexto do build da API: só o pom e o código. O frontend e o runner têm contexto próprio.
+*
+!pom.xml
+!src

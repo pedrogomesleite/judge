@@ -4,7 +4,7 @@ Vue 3 (Composition API com `<script setup lang="ts">`), Vite, Vue Router, Pinia 
 
 ## Rodando
 
-Requisitos: Node `^22.18` ou `>=24.12` e a API rodando em `http://localhost:8080` (pelo IntelliJ).
+Requisitos: Node `^22.18` ou `>=24.12` e a API rodando em `http://localhost:8080` (pelo IntelliJ ou pelo `docker compose`).
 
 ```sh
 npm install
@@ -16,6 +16,10 @@ O Vite encaminha `/api` para a API, então o backend não precisa de CORS. Para 
 ```sh
 npm run build      # type-check (vue-tsc) + build de produção em dist/
 ```
+
+### Com Docker
+
+O `compose.yaml` da raiz sobe o frontend junto com a API, o banco, o RabbitMQ e o runner: `docker compose up -d --build`, com o frontend em `http://localhost:8081`. A imagem (`Dockerfile`) faz o build de produção e o serve com o nginx, que encaminha `/api` para a API sem buffer, por causa dos streams SSE (`nginx.conf`).
 
 ## Telas
 

@@ -10,6 +10,7 @@
 --   aluno      autor das soluções de exemplo
 --
 -- Uso: psql -h localhost -U postgres -d juizin -f scripts/seed-atividades.sql
+-- No compose: docker compose exec -T postgres psql -U postgres -d juizin < scripts/seed-atividades.sql
 
 SET client_encoding = 'UTF8';
 

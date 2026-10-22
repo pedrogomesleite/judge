@@ -1,0 +1,13 @@
+# Configuração do isolate no container do runner (copiada para /usr/local/etc/isolate)
+
+# Boxes: /var/local/lib/isolate/<box-id>. Este diretório e os anteriores só podem ter escrita para o root
+box_root = /var/local/lib/isolate
+lock_root = /run/isolate/locks
+
+# O entrypoint.sh prepara o cgroup (v2) delegado ao isolate e grava o caminho dele neste arquivo
+cg_root = auto:/run/isolate/cgroup
+
+# UIDs/GIDs dos boxes: 60000 + box-id. juizin.runner.boxes não pode passar de num_boxes
+first_uid = 60000
+first_gid = 60000
+num_boxes = 64
