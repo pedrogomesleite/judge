@@ -38,6 +38,15 @@ export interface UsuarioResponse {
   login: string
 }
 
+export interface AtividadeRequest {
+  titulo: string
+  enunciado: string
+  /** 100 a 30000. */
+  limiteTempoMs: number
+  /** 16 a 1024. */
+  limiteMemoriaMb: number
+}
+
 export interface AtividadeResponse {
   id: string
   autorId: string
