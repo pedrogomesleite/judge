@@ -66,6 +66,12 @@ public class GrupoController {
         return grupoService.editar(id, request, UsuarioAtual.id(jwt));
     }
 
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void excluir(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        grupoService.excluir(id, UsuarioAtual.id(jwt));
+    }
+
     @GetMapping("/{id}/activities")
     public List<GrupoAtividadeItemResponse> listarAtividades(@PathVariable UUID id,
                                                              @AuthenticationPrincipal Jwt jwt) {

@@ -19,9 +19,12 @@ import com.packges.judge.exception.RecursoNaoEncontradoException;
 import com.packges.judge.exception.RegraNegocioException;
 import com.packges.judge.messaging.GrupoAlteradoEvent;
 import com.packges.judge.repository.AtividadeRepository;
+import com.packges.judge.repository.CasoDeTesteRepository;
 import com.packges.judge.repository.GrupoAtividadeItemRepository;
 import com.packges.judge.repository.GrupoAtividadeRepository;
 import com.packges.judge.repository.MembroGrupoRepository;
+import com.packges.judge.repository.ResultadoCasoDeTesteRepository;
+import com.packges.judge.repository.SolucaoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -31,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,6 +51,9 @@ public class GrupoService {
     private final MembroGrupoRepository membroRepository;
     private final GrupoAtividadeItemRepository itemRepository;
     private final AtividadeRepository atividadeRepository;
+    private final CasoDeTesteRepository casoDeTesteRepository;
+    private final SolucaoRepository solucaoRepository;
+    private final ResultadoCasoDeTesteRepository resultadoRepository;
     private final UsuarioService usuarioService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -97,6 +104,32 @@ public class GrupoService {
         grupo.setDataFim(request.dataFim());
         notificar(grupoId, TipoAlteracaoGrupo.GRUPO);
         return GrupoResponse.from(grupo, membro.getPapel());
+    }
+
+    /**
+     * Só o AVALIADOR, em qualquer status, e só se o grupo não tiver estudantes. Apaga junto os membros, os casos
+     * comunitários e as soluções enviadas no grupo, com os resultados delas. As atividades continuam existindo.
+     */
+    @Transactional
+    public void excluir(UUID grupoId, UUID usuarioId) {
+        exigirAvaliador(grupoId, usuarioId);
+        // A trava vem antes da verificação: uma entrada pelo convite em andamento não passa despercebida
+        GrupoAtividade grupo = grupoRepository.findByIdParaExcluir(grupoId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Grupo", grupoId));
+        if (membroRepository.existsByGrupoIdAndPapel(grupoId, PapelGrupo.ESTUDANTE)) {
+            throw new RegraNegocioException("Grupo com estudantes não pode ser excluído");
+        }
+
+        int resultados = resultadoRepository.deleteByGrupoId(grupoId);
+        int solucoes = solucaoRepository.deleteByGrupoId(grupoId);
+        int casos = casoDeTesteRepository.deleteByGrupoId(grupoId);
+        int itens = itemRepository.deleteByGrupoId(grupoId);
+        int membros = membroRepository.deleteByGrupoId(grupoId);
+        grupoRepository.delete(grupo);
+
+        log.info("Grupo {} excluído pelo usuário {} ({} membros, {} atividades, {} casos comunitários, {} soluções, {} resultados)",
+                grupoId, usuarioId, membros, itens, casos, solucoes, resultados);
+        notificar(grupoId, TipoAlteracaoGrupo.GRUPO);
     }
 
     @Transactional(readOnly = true)
@@ -210,7 +243,7 @@ public class GrupoService {
      */
     @Transactional
     public GrupoResponse entrarPorConvite(String codigoConvite, UUID usuarioId) {
-        GrupoAtividade grupo = grupoRepository.findByCodigoConvite(codigoConvite)
+        GrupoAtividade grupo = grupoRepository.findByCodigoConviteParaAtualizar(codigoConvite)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Convite", codigoConvite));
 
         var membroExistente = membroRepository.findByGrupoIdAndUsuarioId(grupo.getId(), usuarioId);
@@ -272,6 +305,21 @@ public class GrupoService {
 
     boolean contemAtividade(UUID grupoId, UUID atividadeId) {
         return itemRepository.existsByGrupoIdAndAtividadeId(grupoId, atividadeId);
+    }
+
+    /** AVALIADOR em pelo menos um grupo: é o que permite editar e excluir as próprias atividades. */
+    boolean isAvaliadorEmAlgumGrupo(UUID usuarioId) {
+        return membroRepository.existsByUsuarioIdAndPapel(usuarioId, PapelGrupo.AVALIADOR);
+    }
+
+    boolean atividadeEmAlgumGrupo(UUID atividadeId) {
+        return itemRepository.existsByAtividadeId(atividadeId);
+    }
+
+    /** A atividade faz parte de algum grupo já iniciado (EM_ANDAMENTO ou FINALIZADO), em que ela fica congelada. */
+    boolean atividadeEmGrupoIniciado(UUID atividadeId) {
+        return itemRepository.existsByAtividadeIdAndGrupoStatusIn(atividadeId,
+                EnumSet.of(StatusGrupo.EM_ANDAMENTO, StatusGrupo.FINALIZADO));
     }
 
     private void adicionarMembro(GrupoAtividade grupo, Usuario usuario, PapelGrupo papel) {

@@ -1,7 +1,7 @@
 info:
   name: Alterar peso da atividade (A)
   type: http
-  seq: 6
+  seq: 7
 
 http:
   method: PATCH

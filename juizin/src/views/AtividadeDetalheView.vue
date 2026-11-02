@@ -8,18 +8,27 @@ import FileUpload, { type FileUploadUploaderEvent } from 'primevue/fileupload'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+import { useConfirm } from 'primevue/useconfirm'
+import { useToast } from 'primevue/usetoast'
+import AtividadeDialog from '@/components/AtividadeDialog.vue'
 import CasosCompartilhados from '@/components/CasosCompartilhados.vue'
 import CasosDeTesteLista from '@/components/CasosDeTesteLista.vue'
 import CasosOficiaisCard from '@/components/CasosOficiaisCard.vue'
 import NovoCasoDeTesteDialog from '@/components/NovoCasoDeTesteDialog.vue'
 import ResultadoTag from '@/components/ResultadoTag.vue'
 import { useEventosDaSolucao } from '@/composables/useEventosDaSolucao'
-import { buscarAtividade } from '@/api/atividades'
+import { buscarAtividade, buscarPermissoesAtividade, excluirAtividade } from '@/api/atividades'
 import { listarCasosCompartilhados, listarCasosPublicos } from '@/api/casosDeTeste'
 import { mensagemDeErro } from '@/api/http'
 import { listarLinguagens } from '@/api/linguagens'
 import { enviarSolucao } from '@/api/solucoes'
-import type { AtividadeResponse, CasoDeTesteResponse, LinguagemResponse, SolucaoResponse } from '@/api/types'
+import type {
+  AtividadeResponse,
+  CasoDeTesteResponse,
+  LinguagemResponse,
+  PermissoesAtividadeResponse,
+  SolucaoResponse,
+} from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
 import { comUnidade } from '@/utils/formatacao'
 import { classificar } from '@/utils/rotulos'
@@ -51,6 +60,78 @@ const erroCasos = ref<string | null>(null)
 const compartilhandoCaso = ref(false)
 
 const ehAutor = computed(() => !!atividade.value && auth.usuario?.id === atividade.value.autorId)
+
+// Editar e excluir: só o autor que é avaliador em algum grupo. Quem decide é a API; aqui só mostra os botões
+const toast = useToast()
+const confirm = useConfirm()
+const permissoes = ref<PermissoesAtividadeResponse | null>(null)
+const editandoAtividade = ref(false)
+const excluindo = ref(false)
+
+// Por que os botões estão desabilitados; um aviso só quando o motivo é o mesmo (ex.: não é avaliador)
+const avisosPermissao = computed(() => {
+  const p = permissoes.value
+  if (!p) {
+    return []
+  }
+  if (p.motivoEdicao && p.motivoEdicao === p.motivoExclusao) {
+    return [`Edição e exclusão indisponíveis: ${p.motivoEdicao}`]
+  }
+  return [
+    p.motivoEdicao && `Edição indisponível: ${p.motivoEdicao}`,
+    p.motivoExclusao && `Exclusão indisponível: ${p.motivoExclusao}`,
+  ].filter((aviso): aviso is string => !!aviso)
+})
+
+async function carregarPermissoes() {
+  permissoes.value = null
+  if (!ehAutor.value || !atividade.value) {
+    return
+  }
+  try {
+    permissoes.value = await buscarPermissoesAtividade(atividade.value.id)
+  } catch {
+    // Sem as permissões os botões ficam escondidos; a API recusaria a ação de qualquer forma
+  }
+}
+
+watch(ehAutor, carregarPermissoes)
+
+function aoEditarAtividade(atualizada: AtividadeResponse) {
+  atividade.value = atualizada
+  toast.add({ severity: 'success', summary: 'Atividade atualizada', life: 4000 })
+}
+
+function confirmarExclusao() {
+  if (!atividade.value) {
+    return
+  }
+  confirm.require({
+    header: 'Excluir atividade',
+    message: `Excluir "${atividade.value.titulo}"? Os casos de teste e as respostas enviadas também serão apagados. Essa ação não pode ser desfeita.`,
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancelar', severity: 'secondary', text: true },
+    acceptProps: { label: 'Excluir', severity: 'danger' },
+    accept: excluir,
+  })
+}
+
+async function excluir() {
+  if (!atividade.value) {
+    return
+  }
+  excluindo.value = true
+  try {
+    await excluirAtividade(atividade.value.id)
+    toast.add({ severity: 'success', summary: 'Atividade excluída', life: 4000 })
+    router.push({ name: 'atividades' })
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Não foi possível excluir a atividade', detail: mensagemDeErro(e), life: 5000 })
+    carregarPermissoes()
+  } finally {
+    excluindo.value = false
+  }
+}
 
 const linguagemId = ref<string | null>(null)
 const codigo = ref('')
@@ -88,6 +169,7 @@ async function carregar() {
     linguagens.value = opcoes
     linguagemId.value = opcoes[0]?.id ?? null
     restaurarRascunho()
+    carregarPermissoes()
   } catch (e) {
     erroCarregamento.value = mensagemDeErro(e)
   } finally {
@@ -186,7 +268,33 @@ function restaurarRascunho() {
 
     <template v-else-if="atividade">
       <div class="stack">
-        <h1>{{ atividade.titulo }}</h1>
+        <div class="row">
+          <h1>{{ atividade.titulo }}</h1>
+          <span class="spacer" />
+          <template v-if="permissoes">
+            <Button
+              label="Editar"
+              icon="pi pi-pencil"
+              severity="secondary"
+              size="small"
+              :disabled="!permissoes.podeEditar"
+              @click="editandoAtividade = true"
+            />
+            <Button
+              label="Excluir"
+              icon="pi pi-trash"
+              severity="danger"
+              size="small"
+              outlined
+              :loading="excluindo"
+              :disabled="!permissoes.podeExcluir"
+              @click="confirmarExclusao"
+            />
+          </template>
+        </div>
+        <small v-for="aviso in avisosPermissao" :key="aviso" class="texto-suave">
+          <i class="pi pi-info-circle" /> {{ aviso }}
+        </small>
         <div class="row">
           <Tag severity="secondary" icon="pi pi-clock" :value="`Tempo limite: ${atividade.limiteTempoMs} ms`" />
           <Tag severity="secondary" icon="pi pi-server" :value="`Memória limite: ${atividade.limiteMemoriaMb} MB`" />
@@ -319,6 +427,13 @@ function restaurarRascunho() {
       </Card>
 
       <CasosOficiaisCard v-if="ehAutor" :atividade-id="atividade.id" @publicos-alterados="carregarCasos" />
+
+      <AtividadeDialog
+        v-if="permissoes?.podeEditar"
+        v-model:visible="editandoAtividade"
+        :atividade="atividade"
+        @editada="aoEditarAtividade"
+      />
     </template>
   </section>
 </template>

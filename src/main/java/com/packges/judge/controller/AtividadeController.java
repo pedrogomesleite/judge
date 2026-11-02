@@ -5,6 +5,7 @@ import com.packges.judge.dto.atividade.AtividadeResponse;
 import com.packges.judge.dto.atividade.CasoDeTestePublicoRequest;
 import com.packges.judge.dto.atividade.CasoDeTesteRequest;
 import com.packges.judge.dto.atividade.CasoDeTesteResponse;
+import com.packges.judge.dto.atividade.PermissoesAtividadeResponse;
 import com.packges.judge.security.UsuarioAtual;
 import com.packges.judge.service.AtividadeService;
 import jakarta.validation.Valid;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,6 +57,17 @@ public class AtividadeController {
                                     @Valid @RequestBody AtividadeRequest request,
                                     @AuthenticationPrincipal Jwt jwt) {
         return atividadeService.editar(id, request, UsuarioAtual.id(jwt));
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void excluir(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        atividadeService.excluir(id, UsuarioAtual.id(jwt));
+    }
+
+    @GetMapping("/{id}/permissions")
+    public PermissoesAtividadeResponse permissoes(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return atividadeService.permissoes(id, UsuarioAtual.id(jwt));
     }
 
     @PostMapping("/{id}/test-cases")

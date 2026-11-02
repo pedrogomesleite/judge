@@ -11,7 +11,7 @@ Existe um único tipo de conta: o **Usuário** (login e senha). **Estudante** e 
 | **Visitante** (sem login)     | Quem acessa o Juizin sem entrar                                                            | lista as atividades e vê o enunciado, os casos de teste públicos (exemplos) e as linguagens; para enviar uma solução, precisa entrar ou criar uma conta                                 |
 | **Usuário** (fora de grupo)   | Qualquer usuário autenticado                                                               | cria atividades e os casos de teste oficiais das próprias atividades (podendo marcar alguns como públicos), envia soluções avulsas para qualquer atividade, cria grupos de atividades, visualiza as próprias soluções |
 | **Estudante** (no grupo)      | Membro de um grupo, que entrou pelo link de convite                                        | envia soluções para as atividades do grupo, cria e vê casos de teste comunitários (visíveis só para membros do grupo), compartilha o link de convite, visualiza as próprias soluções, acompanha o placar do grupo e, ao final, a própria pontuação por atividade |
-| **Avaliador** (no grupo)      | Criador do grupo ou membro promovido por outro **Avaliador**                               | tudo que o **Estudante** faz, mais: gerencia atividades, pesos e datas do grupo, remove estudantes antes do início, inicia/finaliza o grupo, promove membros a **Avaliador**, visualiza e compara as soluções de todos os membros do grupo, exporta o resultado final em CSV |
+| **Avaliador** (no grupo)      | Criador do grupo ou membro promovido por outro **Avaliador**                               | tudo que o **Estudante** faz, mais: gerencia atividades, pesos e datas do grupo, remove estudantes antes do início, inicia/finaliza o grupo, promove membros a **Avaliador**, visualiza e compara as soluções de todos os membros do grupo, exporta o resultado final em CSV; edita e exclui as próprias atividades (ver 5.4); exclui o grupo, se ele não tiver estudantes (ver 5.4) |
 
 # 3. Visão Arquitetural de Alto Nível
 
@@ -326,11 +326,15 @@ erDiagram
 ## 5.4 Regras de domínio
 
 - Qualquer usuário cria atividades e envia soluções para qualquer atividade, com ou sem grupo.
+- Editar ou excluir uma atividade: só o autor, e só se ele for `AVALIADOR` em pelo menos um grupo. Um usuário que não é avaliador em nenhum grupo nunca edita nem exclui atividades, nem as próprias (`GET /api/activities/{id}/permissions` informa ao frontend o que é permitido e o motivo).
+- A edição (`PUT /api/activities/{id}`) é recusada se a atividade fizer parte de um grupo `EM_ANDAMENTO` ou `FINALIZADO`, como no congelamento dos grupos.
+- A exclusão (`DELETE /api/activities/{id}`) só vale para atividades que não fazem parte de nenhum grupo, e apaga junto os casos de teste, as soluções avulsas e os resultados delas.
 - Uma atividade pode fazer parte de vários grupos (N:N).
 - Quem cria o grupo vira automaticamente `AVALIADOR`. Um grupo tem sempre pelo menos 1 `AVALIADOR`.
 - Só o `AVALIADOR` promove membros a `AVALIADOR`, edita o grupo, adiciona ou remove atividades, define pesos, remove estudantes e inicia ou finaliza o grupo manualmente.
 - Atividades, pesos e participantes só mudam com o grupo em `AGUARDANDO_INICIO` (adicionar/remover atividade, alterar peso, entrar pelo convite e remover membro são recusados depois disso).
 - Só membros `ESTUDANTE` podem ser removidos; assim o grupo nunca fica sem `AVALIADOR`.
+- A exclusão do grupo (`DELETE /api/groups/{id}`) é feita por um `AVALIADOR`, em qualquer status, e é recusada se o grupo tiver algum membro `ESTUDANTE`. Apaga junto os membros, os casos `COMUNITARIO` e as soluções enviadas no grupo, com os resultados delas; as atividades continuam existindo. Como estudantes só podem ser removidos antes do início, um grupo iniciado com estudantes não pode mais ser excluído.
 - Convite: qualquer membro pode compartilhar o link do grupo. Ao acessá-lo autenticado, o usuário entra como `ESTUDANTE`. Se já for membro, nada muda (operação idempotente). Só é possível entrar antes do início do grupo.
 - Pontuação: cada atividade aceita vale o seu peso, uma única vez por estudante (ver 4.4).
 - Uma solução com `grupo` só é aceita se o autor for membro, a atividade fizer parte do grupo e o grupo estiver `EM_ANDAMENTO`.

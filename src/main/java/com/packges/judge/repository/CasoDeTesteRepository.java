@@ -4,6 +4,7 @@ import com.packges.judge.entity.CasoDeTeste;
 import com.packges.judge.enums.TipoCasoDeTeste;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
@@ -26,4 +27,14 @@ public interface CasoDeTesteRepository extends JpaRepository<CasoDeTeste, UUID> 
 
     @EntityGraph(attributePaths = "grupo")
     List<CasoDeTeste> findByAtividadeIdAndTipoAndGrupoIdIn(UUID atividadeId, TipoCasoDeTeste tipo, List<UUID> grupoIds);
+
+    /** Oficiais e comunitários (exclusão da atividade): apague antes os resultados que apontam para eles. */
+    @Modifying
+    @Query("delete from CasoDeTeste c where c.atividade.id = :atividadeId")
+    int deleteByAtividadeId(UUID atividadeId);
+
+    /** Casos comunitários do grupo (exclusão do grupo). Os oficiais não têm grupo e continuam na atividade. */
+    @Modifying
+    @Query("delete from CasoDeTeste c where c.grupo.id = :grupoId")
+    int deleteByGrupoId(UUID grupoId);
 }

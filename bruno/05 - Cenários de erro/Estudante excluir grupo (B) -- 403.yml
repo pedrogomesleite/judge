@@ -1,0 +1,23 @@
+info:
+  name: Estudante excluir grupo (B) -> 403
+  type: http
+  seq: 19
+
+http:
+  method: DELETE
+  url: "{{baseUrl}}/api/groups/{{groupId}}"
+  auth:
+    type: bearer
+    token: "{{tokenB}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "403"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
