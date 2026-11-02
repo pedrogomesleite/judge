@@ -59,4 +59,14 @@ public interface SolucaoRepository extends JpaRepository<Solucao, UUID> {
             order by s.enviadoEm
             """)
     List<UUID> findIdsNaoPublicadas(Instant enviadaAntesDe, Pageable pagina);
+
+    /** Exclusão da atividade: apague antes os resultados (ResultadoCasoDeTesteRepository.deleteByAtividadeId). */
+    @Modifying
+    @Query("delete from Solucao s where s.atividade.id = :atividadeId")
+    int deleteByAtividadeId(UUID atividadeId);
+
+    /** Exclusão do grupo: apague antes os resultados (ResultadoCasoDeTesteRepository.deleteByGrupoId). */
+    @Modifying
+    @Query("delete from Solucao s where s.grupo.id = :grupoId")
+    int deleteByGrupoId(UUID grupoId);
 }

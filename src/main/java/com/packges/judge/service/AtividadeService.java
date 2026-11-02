@@ -5,6 +5,7 @@ import com.packges.judge.dto.atividade.AtividadeResponse;
 import com.packges.judge.dto.atividade.CasoDeTesteExecucaoResponse;
 import com.packges.judge.dto.atividade.CasoDeTesteRequest;
 import com.packges.judge.dto.atividade.CasoDeTesteResponse;
+import com.packges.judge.dto.atividade.PermissoesAtividadeResponse;
 import com.packges.judge.entity.Atividade;
 import com.packges.judge.entity.CasoDeTeste;
 import com.packges.judge.entity.MembroGrupo;
@@ -14,14 +15,17 @@ import com.packges.judge.exception.RecursoNaoEncontradoException;
 import com.packges.judge.exception.RegraNegocioException;
 import com.packges.judge.repository.AtividadeRepository;
 import com.packges.judge.repository.CasoDeTesteRepository;
+import com.packges.judge.repository.ResultadoCasoDeTesteRepository;
+import com.packges.judge.repository.SolucaoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -31,6 +35,8 @@ public class AtividadeService {
 
     private final AtividadeRepository atividadeRepository;
     private final CasoDeTesteRepository casoDeTesteRepository;
+    private final SolucaoRepository solucaoRepository;
+    private final ResultadoCasoDeTesteRepository resultadoRepository;
     private final UsuarioService usuarioService;
     private final GrupoService grupoService;
 
@@ -38,6 +44,7 @@ public class AtividadeService {
     public AtividadeResponse criar(AtividadeRequest request, UUID usuarioId) {
         Atividade atividade = new Atividade();
         atividade.setAutor(usuarioService.obterEntidade(usuarioId));
+        atividade.setCriadoEm(Instant.now());
         aplicar(atividade, request);
         atividadeRepository.save(atividade);
 
@@ -57,12 +64,49 @@ public class AtividadeService {
         return AtividadeResponse.from(obterEntidade(id));
     }
 
+    /**
+     * Só o autor, sendo AVALIADOR em algum grupo, e só se a atividade não estiver em um grupo já iniciado.
+     */
     @Transactional
     public AtividadeResponse editar(UUID id, AtividadeRequest request, UUID usuarioId) {
         Atividade atividade = obterEntidade(id);
-        exigirAutor(atividade, usuarioId);
+        impedimentoEdicao(atividade, usuarioId).ifPresent(e -> {
+            throw e;
+        });
         aplicar(atividade, request);
+
+        log.info("Atividade {} editada pelo usuário {}", id, usuarioId);
         return AtividadeResponse.from(atividade);
+    }
+
+    /**
+     * Só o autor, sendo AVALIADOR em algum grupo, e só se a atividade não fizer parte de nenhum grupo.
+     * Apaga junto os casos de teste, as soluções avulsas e os resultados delas.
+     */
+    @Transactional
+    public void excluir(UUID id, UUID usuarioId) {
+        Atividade atividade = obterEntidade(id);
+        impedimentoExclusao(atividade, usuarioId).ifPresent(e -> {
+            throw e;
+        });
+
+        int resultados = resultadoRepository.deleteByAtividadeId(id);
+        int solucoes = solucaoRepository.deleteByAtividadeId(id);
+        int casos = casoDeTesteRepository.deleteByAtividadeId(id);
+        atividadeRepository.delete(atividade);
+
+        log.info("Atividade {} excluída pelo usuário {} ({} casos de teste, {} soluções, {} resultados)",
+                id, usuarioId, casos, solucoes, resultados);
+    }
+
+    @Transactional(readOnly = true)
+    public PermissoesAtividadeResponse permissoes(UUID id, UUID usuarioId) {
+        Atividade atividade = obterEntidade(id);
+        Optional<RuntimeException> edicao = impedimentoEdicao(atividade, usuarioId);
+        Optional<RuntimeException> exclusao = impedimentoExclusao(atividade, usuarioId);
+        return new PermissoesAtividadeResponse(
+                edicao.isEmpty(), edicao.map(RuntimeException::getMessage).orElse(null),
+                exclusao.isEmpty(), exclusao.map(RuntimeException::getMessage).orElse(null));
     }
 
     /**
@@ -186,11 +230,41 @@ public class AtividadeService {
         }
     }
 
+    /**
+     * A exceção que impede editar, ou vazio se o usuário pode. Usada tanto para recusar a edição quanto para
+     * informar as permissões ao frontend, para as duas regras não divergirem.
+     */
+    private Optional<RuntimeException> impedimentoEdicao(Atividade atividade, UUID usuarioId) {
+        return impedimentoAutorAvaliador(atividade, usuarioId)
+                .or(() -> grupoService.atividadeEmGrupoIniciado(atividade.getId())
+                        ? Optional.of(new RegraNegocioException(
+                                "A atividade faz parte de um grupo em andamento ou finalizado e não pode ser editada"))
+                        : Optional.empty());
+    }
+
+    private Optional<RuntimeException> impedimentoExclusao(Atividade atividade, UUID usuarioId) {
+        return impedimentoAutorAvaliador(atividade, usuarioId)
+                .or(() -> grupoService.atividadeEmAlgumGrupo(atividade.getId())
+                        ? Optional.of(new RegraNegocioException(
+                                "A atividade faz parte de um grupo; remova-a dos grupos antes de excluí-la"))
+                        : Optional.empty());
+    }
+
+    private Optional<RuntimeException> impedimentoAutorAvaliador(Atividade atividade, UUID usuarioId) {
+        if (!atividade.getAutor().getId().equals(usuarioId)) {
+            return Optional.of(new AcessoNegadoException("Apenas o autor pode editar ou excluir a atividade"));
+        }
+        if (!grupoService.isAvaliadorEmAlgumGrupo(usuarioId)) {
+            return Optional.of(new AcessoNegadoException(
+                    "Apenas avaliadores podem editar ou excluir atividades: crie um grupo ou seja promovido a avaliador"));
+        }
+        return Optional.empty();
+    }
+
     private void aplicar(Atividade atividade, AtividadeRequest request) {
         atividade.setTitulo(request.titulo());
         atividade.setEnunciado(request.enunciado());
         atividade.setLimiteTempoMs(request.limiteTempoMs());
         atividade.setLimiteMemoriaMb(request.limiteMemoriaMb());
-        atividade.setCriadoEm(new Date().toInstant());
     }
 }

@@ -1,7 +1,7 @@
 info:
   name: Listar casos COMUNITARIOS do grupo (B)
   type: http
-  seq: 14
+  seq: 15
 
 http:
   method: GET

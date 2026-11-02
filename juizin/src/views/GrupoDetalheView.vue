@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import Card from 'primevue/card'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -15,7 +16,14 @@ import MembrosDoGrupo from '@/components/MembrosDoGrupo.vue'
 import ProgressoDoGrupo from '@/components/ProgressoDoGrupo.vue'
 import RelatorioDoGrupo from '@/components/RelatorioDoGrupo.vue'
 import { useEventosDoGrupo } from '@/composables/useEventosDoGrupo'
-import { buscarGrupo, finalizarGrupo, iniciarGrupo, listarAtividadesDoGrupo, listarMembrosDoGrupo } from '@/api/grupos'
+import {
+  buscarGrupo,
+  excluirGrupo,
+  finalizarGrupo,
+  iniciarGrupo,
+  listarAtividadesDoGrupo,
+  listarMembrosDoGrupo,
+} from '@/api/grupos'
 import { ApiError, mensagemDeErro } from '@/api/http'
 import type { GrupoAtividadeItemResponse, GrupoResponse, MembroResponse, TipoAlteracaoGrupo } from '@/api/types'
 import { useAuthStore } from '@/stores/auth'
@@ -28,6 +36,7 @@ import { ROTULOS_PAPEL, ROTULOS_STATUS_GRUPO } from '@/utils/rotulos'
 const props = defineProps<{ id: string }>()
 
 const auth = useAuthStore()
+const router = useRouter()
 const toast = useToast()
 const confirm = useConfirm()
 
@@ -39,6 +48,7 @@ const erro = ref<string | null>(null)
 /** Sem acesso ao grupo (não é membro, foi removido ou o grupo não existe). */
 const negado = ref<string | null>(null)
 const alterandoStatus = ref(false)
+const excluindo = ref(false)
 
 /** Incrementados a cada alteração: os componentes filhos observam e buscam de novo. */
 const revisaoEnvios = ref(0)
@@ -47,6 +57,8 @@ const revisaoPlacar = ref(0)
 const avaliador = computed(() => grupo.value?.meuPapel === 'AVALIADOR')
 const status = computed(() => grupo.value?.status)
 const pontuacaoMaxima = computed(() => atividades.value.reduce((total, a) => total + a.peso, 0))
+// Só para mostrar o botão: quem decide é a API
+const temEstudantes = computed(() => membros.value.some((m) => m.papel === 'ESTUDANTE'))
 
 function tratarErro(e: unknown) {
   if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
@@ -160,6 +172,31 @@ async function alterarStatus(acao: 'iniciar' | 'finalizar') {
     alterandoStatus.value = false
   }
 }
+
+function confirmarExclusao() {
+  confirm.require({
+    header: 'Excluir grupo',
+    message: `Excluir "${grupo.value?.nome}"? Os casos compartilhados e as respostas enviadas neste grupo também serão apagados. As atividades continuam existindo. Essa ação não pode ser desfeita.`,
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: { label: 'Cancelar', severity: 'secondary', text: true },
+    acceptProps: { label: 'Excluir', severity: 'danger' },
+    accept: excluir,
+  })
+}
+
+async function excluir() {
+  excluindo.value = true
+  try {
+    await excluirGrupo(props.id)
+    toast.add({ severity: 'success', summary: 'Grupo excluído', life: 4000 })
+    router.push({ name: 'grupos' })
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Não foi possível excluir o grupo', detail: mensagemDeErro(e), life: 5000 })
+    recarregar([carregarMembros])
+  } finally {
+    excluindo.value = false
+  }
+}
 </script>
 
 <template>
@@ -208,7 +245,20 @@ async function alterarStatus(acao: 'iniciar' | 'finalizar') {
             :loading="alterandoStatus"
             @click="confirmarTransicao('finalizar')"
           />
+          <Button
+            v-if="avaliador"
+            label="Excluir"
+            icon="pi pi-trash"
+            severity="danger"
+            outlined
+            :loading="excluindo"
+            :disabled="temEstudantes"
+            @click="confirmarExclusao"
+          />
         </div>
+        <small v-if="avaliador && temEstudantes" class="texto-suave">
+          <i class="pi pi-info-circle" /> Exclusão indisponível: o grupo tem estudantes.
+        </small>
         <span class="texto-suave"><i class="pi pi-calendar" /> {{ formatarPeriodo(grupo.dataInicio, grupo.dataFim) }}</span>
         <span v-if="grupo.descricao" class="descricao">{{ grupo.descricao }}</span>
       </div>

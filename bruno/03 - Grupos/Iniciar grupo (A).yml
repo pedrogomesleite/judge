@@ -1,7 +1,7 @@
 info:
   name: Iniciar grupo (A)
   type: http
-  seq: 12
+  seq: 13
 
 http:
   method: POST

@@ -1,7 +1,7 @@
 info:
-  name: Editar atividade
+  name: Editar atividade (A, agora avaliador)
   type: http
-  seq: 4
+  seq: 2
 
 http:
   method: PUT

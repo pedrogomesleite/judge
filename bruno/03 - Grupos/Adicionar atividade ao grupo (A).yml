@@ -1,7 +1,7 @@
 info:
   name: Adicionar atividade ao grupo (A)
   type: http
-  seq: 5
+  seq: 6
 
 http:
   method: POST

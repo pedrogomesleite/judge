@@ -8,7 +8,7 @@ import InputIcon from 'primevue/inputicon'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
-import NovaAtividadeDialog from '@/components/NovaAtividadeDialog.vue'
+import AtividadeDialog from '@/components/AtividadeDialog.vue'
 import { listarAtividades } from '@/api/atividades'
 import { mensagemDeErro } from '@/api/http'
 import type { AtividadeResponse } from '@/api/types'
@@ -66,7 +66,7 @@ function aoCriarAtividade(atividade: AtividadeResponse) {
       <Button v-if="auth.autenticado" label="Nova atividade" icon="pi pi-plus" @click="criandoAtividade = true" />
     </div>
 
-    <NovaAtividadeDialog v-if="auth.autenticado" v-model:visible="criandoAtividade" @criada="aoCriarAtividade" />
+    <AtividadeDialog v-if="auth.autenticado" v-model:visible="criandoAtividade" @criada="aoCriarAtividade" />
 
     <DataTable
       :value="filtradas"

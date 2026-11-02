@@ -57,6 +57,14 @@ export interface AtividadeResponse {
   criadoEm: string
 }
 
+/** Os motivos são nulos quando a ação é permitida. */
+export interface PermissoesAtividadeResponse {
+  podeEditar: boolean
+  motivoEdicao: string | null
+  podeExcluir: boolean
+  motivoExclusao: string | null
+}
+
 export type TipoCasoDeTeste = 'OFICIAL' | 'COMUNITARIO'
 
 export interface CasoDeTesteRequest {

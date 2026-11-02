@@ -30,6 +30,11 @@ export function buscarGrupo(grupoId: string) {
   return request<GrupoResponse>('GET', caminhoDoGrupo(grupoId))
 }
 
+/** Avaliador, em qualquer status, só se o grupo não tiver estudantes (422 caso tenha). */
+export function excluirGrupo(grupoId: string) {
+  return request<void>('DELETE', caminhoDoGrupo(grupoId))
+}
+
 /** Avaliador: AGUARDANDO_INICIO → EM_ANDAMENTO. */
 export function iniciarGrupo(grupoId: string) {
   return request<GrupoResponse>('POST', `${caminhoDoGrupo(grupoId)}/start`)

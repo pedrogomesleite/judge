@@ -6,9 +6,9 @@ import InputNumber from 'primevue/inputnumber'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import { criarAtividade } from '@/api/atividades'
+import { criarAtividade, editarAtividade } from '@/api/atividades'
 import { ApiError, mensagemDeErro } from '@/api/http'
-import type { AtividadeResponse } from '@/api/types'
+import type { AtividadeRequest, AtividadeResponse } from '@/api/types'
 
 // Mesmos limites do AtividadeRequest
 const TITULO_MAX = 200
@@ -22,9 +22,15 @@ const MEMORIA_PADRAO_MB = 256
 
 const visivel = defineModel<boolean>('visible', { required: true })
 
+// Sem atividade: cria uma nova. Com atividade: edita a existente
+const props = defineProps<{ atividade?: AtividadeResponse | null }>()
+
 const emit = defineEmits<{
   criada: [atividade: AtividadeResponse]
+  editada: [atividade: AtividadeResponse]
 }>()
+
+const editando = computed(() => !!props.atividade)
 
 const id = useId()
 const form = reactive({
@@ -46,14 +52,15 @@ const podeSalvar = computed(
     !salvando.value,
 )
 
-// Cada abertura começa com o formulário limpo
+// Cada abertura começa com o formulário limpo, ou com os dados atuais da atividade em edição
 watch(visivel, (aberto) => {
   if (aberto) {
+    const atual = props.atividade
     Object.assign(form, {
-      titulo: '',
-      enunciado: '',
-      limiteTempoMs: TEMPO_PADRAO_MS,
-      limiteMemoriaMb: MEMORIA_PADRAO_MB,
+      titulo: atual?.titulo ?? '',
+      enunciado: atual?.enunciado ?? '',
+      limiteTempoMs: atual?.limiteTempoMs ?? TEMPO_PADRAO_MS,
+      limiteMemoriaMb: atual?.limiteMemoriaMb ?? MEMORIA_PADRAO_MB,
     })
     erro.value = null
     errosCampos.value = {}
@@ -68,13 +75,17 @@ async function salvar() {
   errosCampos.value = {}
   salvando.value = true
   try {
-    const atividade = await criarAtividade({
+    const dados: AtividadeRequest = {
       titulo: form.titulo.trim(),
       enunciado: form.enunciado.trim(),
       limiteTempoMs: form.limiteTempoMs!,
       limiteMemoriaMb: form.limiteMemoriaMb!,
-    })
-    emit('criada', atividade)
+    }
+    if (props.atividade) {
+      emit('editada', await editarAtividade(props.atividade.id, dados))
+    } else {
+      emit('criada', await criarAtividade(dados))
+    }
     visivel.value = false
   } catch (e) {
     erro.value = mensagemDeErro(e)
@@ -91,12 +102,15 @@ async function salvar() {
   <Dialog
     v-model:visible="visivel"
     modal
-    header="Nova atividade"
+    :header="editando ? 'Editar atividade' : 'Nova atividade'"
     :style="{ width: '44rem' }"
     :breakpoints="{ '720px': '95vw' }"
   >
     <form class="stack" @submit.prevent="salvar">
-      <span class="texto-suave">
+      <span v-if="editando" class="texto-suave">
+        As alterações valem para os próximos envios. Os envios já avaliados mantêm o veredito.
+      </span>
+      <span v-else class="texto-suave">
         Você será o autor da atividade. Depois de criá-la, cadastre os casos de teste oficiais na tela da atividade:
         são eles que decidem o veredito.
       </span>
@@ -112,9 +126,9 @@ async function salvar() {
         <Textarea
           :id="`${id}-enunciado`"
           v-model="form.enunciado"
-          rows="8"
+          class="enunciado"
+          rows="10"
           placeholder="Descreva o problema, o formato da entrada e o formato da saída"
-          auto-resize
           fluid
         />
         <small v-if="errosCampos.enunciado" class="erro-campo">{{ errosCampos.enunciado }}</small>
@@ -162,13 +176,25 @@ async function salvar() {
       <div class="row">
         <span class="spacer" />
         <Button type="button" label="Cancelar" severity="secondary" text @click="visivel = false" />
-        <Button type="submit" label="Criar atividade" icon="pi pi-check" :loading="salvando" :disabled="!podeSalvar" />
+        <Button
+          type="submit"
+          :label="editando ? 'Salvar alterações' : 'Criar atividade'"
+          icon="pi pi-check"
+          :loading="salvando"
+          :disabled="!podeSalvar"
+        />
       </div>
     </form>
   </Dialog>
 </template>
 
 <style scoped>
+/* Altura fixa com rolagem interna: um enunciado longo não empurra o resto do formulário */
+.enunciado {
+  resize: vertical;
+  max-height: 50vh;
+}
+
 .limites {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

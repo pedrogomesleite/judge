@@ -7,7 +7,7 @@ import InputNumber from 'primevue/inputnumber'
 import Button from 'primevue/button'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
-import NovaAtividadeDialog from '@/components/NovaAtividadeDialog.vue'
+import AtividadeDialog from '@/components/AtividadeDialog.vue'
 import { listarAtividades } from '@/api/atividades'
 import { adicionarAtividadeAoGrupo, alterarPesoDaAtividade, removerAtividadeDoGrupo } from '@/api/grupos'
 import { mensagemDeErro } from '@/api/http'
@@ -269,7 +269,7 @@ async function remover(atividade: GrupoAtividadeItemResponse) {
       />
     </form>
 
-    <NovaAtividadeDialog v-model:visible="criandoAtividade" @criada="aoCriarAtividade" />
+    <AtividadeDialog v-model:visible="criandoAtividade" @criada="aoCriarAtividade" />
 
     <DataTable :value="atividades" data-key="atividadeId" size="small">
       <template #empty>Nenhuma atividade no grupo ainda. Adicione atividades do catálogo acima.</template>
