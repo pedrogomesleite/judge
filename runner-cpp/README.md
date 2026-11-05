@@ -24,16 +24,6 @@ JUIZIN_RUNNER_API_URL=http://host.docker.internal:8080 docker compose up -d --bu
 
 O build da imagem compila o jar (Maven, dentro do Docker) e o isolate (versão fixada em `ISOLATE_VERSION`).
 
-## cgroup v2 no WSL2
-Versões do WSL anteriores à 2.5.1 sobem o Linux em cgroup v1 (híbrido), e o `entrypoint.sh` para com `cgroup v2 não encontrado`. Para trocar para cgroup v2:
-
-1. Atualize o WSL com `wsl --update` (a partir da 2.5.1, o padrão é cgroup v2). Se não puder atualizar, crie `%USERPROFILE%\.wslconfig` com:
-   ```ini
-   [wsl2]
-   kernelCommandLine = cgroup_no_v1=all systemd.unified_cgroup_hierarchy=1
-   ```
-2. Rode `wsl --shutdown` (derruba todas as distros e os containers) e abra a distro de novo.
-3. Confira: `stat -fc %T /sys/fs/cgroup` deve mostrar `cgroup2fs`, e `docker info --format '{{.CgroupVersion}}'`, `2`.
 
 ## Configuração (variáveis de ambiente)
 | Variável                | Padrão                    | Uso                                                                                   |

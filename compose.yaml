@@ -72,7 +72,8 @@ services:
       - 'RABBITMQ_HOST=rabbitmq'
       - 'JUIZIN_RUNNER_API_URL=${JUIZIN_RUNNER_API_URL:-http://api:8080}'
       - 'JUIZIN_RUNNER_TOKEN=juizin-dev-runner-token-change-me-0123456789'
-      - 'JUIZIN_RUNNER_BOXES=2'
+      # Execuções simultâneas por réplica; os testes de carga variam (loadtest/README.md)
+      - 'JUIZIN_RUNNER_BOXES=${JUIZIN_RUNNER_BOXES:-2}'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     depends_on:

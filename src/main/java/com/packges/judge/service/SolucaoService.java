@@ -150,7 +150,7 @@ public class SolucaoService {
      */
     @Transactional
     public void marcarEmExecucao(UUID solucaoId) {
-        if (solucaoRepository.marcarEmExecucao(solucaoId) > 0) {
+        if (solucaoRepository.marcarEmExecucao(solucaoId, Instant.now()) > 0) {
             solucaoRepository.findById(solucaoId).ifPresent(this::notificar);
         }
     }
@@ -176,6 +176,7 @@ public class SolucaoService {
         solucao.setStatus(resultado.veredito() == Veredito.ERRO_INTERNO ? StatusSolucao.FALHA : StatusSolucao.CONCLUIDA);
         solucao.setTempoMs(resultado.tempoMs());
         solucao.setMemoriaKb(resultado.memoriaKb());
+        solucao.setFinalizadaEm(Instant.now());
 
         if (resultado.casos() != null) {
             List<ResultadoCasoDeTeste> resultados = resultado.casos().stream()
@@ -207,6 +208,7 @@ public class SolucaoService {
                 .ifPresentOrElse(solucao -> {
                     solucao.setStatus(StatusSolucao.FALHA);
                     solucao.setVeredito(Veredito.ERRO_INTERNO);
+                    solucao.setFinalizadaEm(Instant.now());
                     log.warn("Solução {} marcada como FALHA", solucaoId);
                     notificar(solucao);
                 }, () -> log.warn("Falha ignorada: solução {} não encontrada ou já finalizada", solucaoId));

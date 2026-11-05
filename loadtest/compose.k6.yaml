@@ -1,0 +1,15 @@
+# Gerador de carga (k6) na mesma rede do compose.yaml, falando direto com a API em http://api:8080.
+# Uso (na raiz do repositório):
+#   docker compose -f compose.yaml -f loadtest/compose.k6.yaml run --rm k6 run /scripts/submissoes.js
+# O loadtest/rodar.py usa este arquivo. Caminhos relativos partem da raiz (pasta do primeiro arquivo -f).
+services:
+  k6:
+    image: 'grafana/k6:1.3.0'
+    profiles: ['loadtest']
+    environment:
+      - 'API_URL=${API_URL:-http://api:8080}'
+    volumes:
+      - './loadtest/k6:/scripts:ro'
+      - './loadtest/resultados:/resultados'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'

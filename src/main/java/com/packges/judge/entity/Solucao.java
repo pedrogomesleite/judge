@@ -59,4 +59,13 @@ public class Solucao {
 
     /** Momento em que o broker confirmou a publicação. Nulo = ainda não publicada (ADR-007). */
     private Instant publicadaEm;
+
+    /**
+     * Momento em que a API recebeu o EXECUCAO_INICIADA do runner (PENDENTE → EM_EXECUCAO). Com publicadaEm, separa a
+     * espera na fila do tempo de avaliação. Nulo = ainda na fila, ou o resultado chegou antes do aviso.
+     */
+    private Instant iniciadaEm;
+
+    /** Momento em que o veredito (CONCLUIDA) ou a falha (FALHA) foi gravado. Nulo = ainda não finalizada. */
+    private Instant finalizadaEm;
 }

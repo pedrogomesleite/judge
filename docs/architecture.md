@@ -4,14 +4,14 @@ O **Juizin** é uma plataforma de correção de código fonte automatizada
 
 # 2. Personas e Atores (Quem usa)
 
-Existe um único tipo de conta: o **Usuário** (login e senha). **Estudante** e **Avaliador** não são perfis globais, e sim **papéis dentro de cada Grupo de Atividade** (`MembroGrupo.papel`). O mesmo **Usuário** pode ser **Avaliador** em um grupo e **Estudante** em outro.
-
-| Persona                       | Descrição                                                                                  | Ações                                                                                                                                                                                    |
-|:------------------------------|:-------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Visitante** (sem login)     | Quem acessa o Juizin sem entrar                                                            | lista as atividades e vê o enunciado, os casos de teste públicos (exemplos) e as linguagens; para enviar uma solução, precisa entrar ou criar uma conta                                 |
-| **Usuário** (fora de grupo)   | Qualquer usuário autenticado                                                               | cria atividades e os casos de teste oficiais das próprias atividades (podendo marcar alguns como públicos), envia soluções avulsas para qualquer atividade, cria grupos de atividades, visualiza as próprias soluções |
-| **Estudante** (no grupo)      | Membro de um grupo, que entrou pelo link de convite                                        | envia soluções para as atividades do grupo, cria e vê casos de teste comunitários (visíveis só para membros do grupo), compartilha o link de convite, visualiza as próprias soluções, acompanha o placar do grupo e, ao final, a própria pontuação por atividade |
-| **Avaliador** (no grupo)      | Criador do grupo ou membro promovido por outro **Avaliador**                               | tudo que o **Estudante** faz, mais: gerencia atividades, pesos e datas do grupo, remove estudantes antes do início, inicia/finaliza o grupo, promove membros a **Avaliador**, visualiza e compara as soluções de todos os membros do grupo, exporta o resultado final em CSV |
+  Existe um único tipo de conta: o **Usuário** (login e senha). **Estudante** e **Avaliador** não são perfis globais, e sim **papéis dentro de cada Grupo de Atividade** (`MembroGrupo.papel`). O mesmo **Usuário** pode ser **Avaliador** em um grupo e **Estudante** em outro.
+  
+  | Persona                       | Descrição                                                                                  | Ações                                                                                                                                                                                    |
+  |:------------------------------|:-------------------------------------------------------------------------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+  | **Visitante** (sem login)     | Quem acessa o Juizin sem entrar                                                            | lista as atividades e vê o enunciado, os casos de teste públicos (exemplos) e as linguagens; para enviar uma solução, precisa entrar ou criar uma conta                                 |
+  | **Usuário** (fora de grupo)   | Qualquer usuário autenticado                                                               | cria atividades e os casos de teste oficiais das próprias atividades (podendo marcar alguns como públicos), envia soluções avulsas para qualquer atividade, cria grupos de atividades, visualiza as próprias soluções |
+  | **Estudante** (no grupo)      | Membro de um grupo, que entrou pelo link de convite                                        | envia soluções para as atividades do grupo, cria e vê casos de teste comunitários (visíveis só para membros do grupo), compartilha o link de convite, visualiza as próprias soluções, acompanha o placar do grupo e, ao final, a própria pontuação por atividade |
+  | **Avaliador** (no grupo)      | Criador do grupo ou membro promovido por outro **Avaliador**                               | tudo que o **Estudante** faz, mais: gerencia atividades, pesos e datas do grupo, remove estudantes antes do início, inicia/finaliza o grupo, promove membros a **Avaliador**, visualiza e compara as soluções de todos os membros do grupo, exporta o resultado final em CSV |
 
 # 3. Visão Arquitetural de Alto Nível
 
@@ -25,7 +25,7 @@ Neste primeiro momento **apenas o Runner C/C++ é implementado**. A arquitetura 
 
 ```mermaid
 flowchart LR
-    U[Estudante / Avaliador<br/>Frontend Vue 3] -->|HTTPS /api| API[Juizin API<br/>Spring Boot]
+    U[Estudante / Professor<br/>Frontend Vue 3] -->|HTTPS /api| API[API<br/>Spring Boot]
     API --> DB[(PostgreSQL)]
     API -->|submissions.cpp| K[[RabbitMQ]]
     K -->|competing consumers - prefetch| R[Runner C/C++<br/>N réplicas]
@@ -168,8 +168,8 @@ As transições acontecem automaticamente por `dataInicio`/`dataFim` (job agenda
 ```mermaid
 stateDiagram-v2
     [*] --> AGUARDANDO_INICIO: grupo criado
-    AGUARDANDO_INICIO --> EM_ANDAMENTO: dataInicio atingida / Avaliador inicia
-    EM_ANDAMENTO --> FINALIZADO: dataFim atingida / Avaliador finaliza
+    AGUARDANDO_INICIO --> EM_ANDAMENTO: dataInicio atingida / Professor inicia
+    EM_ANDAMENTO --> FINALIZADO: dataFim atingida / Professor finaliza
     FINALIZADO --> [*]
 ```
 
@@ -209,7 +209,7 @@ Atividades, pesos e participantes ficam congelados a partir de `EM_ANDAMENTO`.
 | **Atividade**            | Enunciado do exercício; criada por qualquer usuário        | id, autor, titulo, enunciado, limiteTempoMs, limiteMemoriaMb                                                           |
 | **CasoDeTeste**          | Entrada e saída esperada de uma atividade                  | id, atividade, autor, entrada, saidaEsperada, tipo (`OFICIAL` / `COMUNITARIO`), grupo (só para os comunitários), publico (só para os oficiais) |
 | **Linguagem**            | Linguagem suportada e o roteamento para o runner (ver 3.5) | id, nome, versao, fila (ex.: `submissions.cpp`), extensao (ex.: `cpp`), ativa                                          |
-| **Solucao**              | Código enviado por um usuário para uma atividade           | id, autor, atividade, grupo (opcional), linguagem, codigo, status, veredito, tempoMs, memoriaKb, enviadoEm, publicadaEm |
+| **Solucao**              | Código enviado por um usuário para uma atividade           | id, autor, atividade, grupo (opcional), linguagem, codigo, status, veredito, tempoMs, memoriaKb, enviadoEm, publicadaEm, iniciadaEm, finalizadaEm |
 | **ResultadoCasoDeTeste** | Resultado de cada caso de teste oficial executado          | id, solucao, casoDeTeste, veredito, tempoMs, memoriaKb                                                                 |
 | **GrupoAtividade**       | Compilado de atividades com ciclo de vida                  | id, criador, nome, descricao, status, dataInicio, dataFim, codigoConvite                                               |
 | **GrupoAtividadeItem**   | Associação N:N entre grupo e atividade                     | grupo, atividade, ordem, peso (1 a 100, padrão 1: pontos de um envio aceito)                                           |
@@ -280,6 +280,8 @@ erDiagram
         int memoriaKb
         timestamp enviadoEm
         timestamp publicadaEm "nulo = ainda não publicada"
+        timestamp iniciadaEm "EXECUCAO_INICIADA recebido"
+        timestamp finalizadaEm "veredito ou falha gravado"
     }
     RESULTADO_CASO_DE_TESTE {
         uuid id PK

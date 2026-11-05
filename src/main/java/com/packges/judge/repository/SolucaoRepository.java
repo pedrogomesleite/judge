@@ -37,13 +37,13 @@ public interface SolucaoRepository extends JpaRepository<Solucao, UUID> {
     @Query("select s from Solucao s where s.id = :id")
     Optional<Solucao> findByIdParaAtualizar(UUID id);
 
-    /** Só PENDENTE → EM_EXECUCAO. Altera só o status, sem sobrescrever um resultado gravado em paralelo. */
+    /** Só PENDENTE → EM_EXECUCAO. Altera só o status e iniciadaEm, sem sobrescrever um resultado gravado em paralelo. */
     @Modifying(clearAutomatically = true)
     @Query("""
-            update Solucao s set s.status = com.packges.judge.enums.StatusSolucao.EM_EXECUCAO
+            update Solucao s set s.status = com.packges.judge.enums.StatusSolucao.EM_EXECUCAO, s.iniciadaEm = :iniciadaEm
             where s.id = :id and s.status = com.packges.judge.enums.StatusSolucao.PENDENTE
             """)
-    int marcarEmExecucao(UUID id);
+    int marcarEmExecucao(UUID id, Instant iniciadaEm);
 
     /** Altera só publicadaEm, sem sobrescrever o status gravado em paralelo pelo resultado do runner. */
     @Modifying
